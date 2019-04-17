@@ -540,12 +540,15 @@ class PyMemDebugTests(unittest.TestCase):
         code = code.format(func=func)
         assert_python_ok('-c', code, PYTHONMALLOC=self.PYTHONMALLOC)
 
+    @unittest.skipUnless(support.with_pymalloc(), 'need pymalloc')
     def test_pyobject_is_freed_uninitialized(self):
         self.check_pyobject_is_freed('pyobject_uninitialized')
 
+    @unittest.skipUnless(support.with_pymalloc(), 'need pymalloc')
     def test_pyobject_is_freed_forbidden_bytes(self):
         self.check_pyobject_is_freed('pyobject_forbidden_bytes')
 
+    @unittest.skipUnless(support.with_pymalloc(), 'need pymalloc')
     def test_pyobject_is_freed_free(self):
         self.check_pyobject_is_freed('pyobject_freed')
 

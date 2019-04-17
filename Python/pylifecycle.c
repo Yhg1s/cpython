@@ -2,6 +2,8 @@
 
 #include "Python.h"
 
+#include <gc/gc.h>
+
 #include "Python-ast.h"
 #undef Yield   /* undefine macro conflicting with <winbase.h> */
 #include "pycore_coreconfig.h"
@@ -84,6 +86,8 @@ _PyRuntime_Initialize(void)
         return _Py_INIT_OK();
     }
     runtime_initialized = 1;
+
+    GC_INIT();
 
     return _PyRuntimeState_Init(&_PyRuntime);
 }
@@ -569,6 +573,8 @@ pycore_create_interpreter(const _PyCoreConfig *core_config,
 
     /* Create the GIL */
     PyEval_InitThreads();
+
+    GC_allow_register_threads();
 
     return _Py_INIT_OK();
 }
