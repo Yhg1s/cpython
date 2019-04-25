@@ -117,15 +117,34 @@ _PyMem_RawCalloc(void *ctx, size_t nelem, size_t elsize)
 static void *
 _PyMem_RawRealloc(void *ctx, void *ptr, size_t size)
 {
+    GC_finalization_proc fn;
+
+    if (ptr == NULL)
+        return _PyMem_RawMalloc(ctx, size);
+
     if (size == 0)
         size = 1;
-    return GC_REALLOC(ptr, size);
+    if (!GC_is_heap_ptr(ptr)) {
+        abort();
+    }
+    GC_REGISTER_FINALIZER(ptr, NULL, NULL, &fn, NULL);
+    ptr = GC_REALLOC(ptr, size);
+    if (fn != NULL) {
+        GC_REGISTER_FINALIZER(ptr, fn, NULL, NULL, NULL);
+    }
+    return ptr;
 }
 
 static void
 _PyMem_RawFree(void *ctx, void *ptr)
 {
-    /* GC_FREE(ptr); */ 
+    if (ptr == NULL)
+        return;
+    if (!GC_is_heap_ptr(ptr)) {
+        abort();
+    }
+    GC_REGISTER_FINALIZER(ptr, NULL, NULL, NULL, NULL);
+//    GC_FREE(ptr);
 }
 
 
