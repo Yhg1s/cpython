@@ -54,6 +54,7 @@ typedef struct {
 } PyGC_Head;
 
 #define _Py_AS_GC(o) ((PyGC_Head *)(o)-1)
+#define _Py_FROM_GC(o) ((PyObject *)((PyGC_Head *)(o)+1))
 
 /* True if the object is currently tracked by the GC. */
 #define _PyObject_GC_IS_TRACKED(o) (_Py_AS_GC(o)->_gc_next != 0)

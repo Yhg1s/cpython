@@ -111,6 +111,58 @@ PyAPI_FUNC(void) PyObject_Free(void *ptr);
 
 
 /*
+ * Garbage Collection Support
+ * ==========================
+ */
+
+/* C equivalent of gc.collect() which ignores the state of gc.enabled. */
+PyAPI_FUNC(Py_ssize_t) PyGC_Collect(void);
+
+/* Test if a type has a GC head */
+#define PyType_IS_GC(t) PyType_HasFeature((t), Py_TPFLAGS_HAVE_GC)
+
+PyAPI_FUNC(PyVarObject *) _PyObject_GC_Resize(PyVarObject *, Py_ssize_t);
+#define PyObject_GC_Resize(type, op, n) \
+                ( (type *) _PyObject_GC_Resize(_PyVarObject_CAST(op), (n)) )
+
+
+
+PyAPI_FUNC(PyObject *) _PyObject_GC_New(PyTypeObject *);
+PyAPI_FUNC(PyVarObject *) _PyObject_GC_NewVar(PyTypeObject *, Py_ssize_t);
+
+/* Tell the GC to track this object.
+ *
+ * See also private _PyObject_GC_TRACK() macro. */
+PyAPI_FUNC(void) PyObject_GC_Track(void *);
+
+/* Tell the GC to stop tracking this object.
+ *
+ * See also private _PyObject_GC_UNTRACK() macro. */
+PyAPI_FUNC(void) PyObject_GC_UnTrack(void *);
+
+PyAPI_FUNC(void) PyObject_GC_Del(void *);
+
+#define PyObject_GC_New(type, typeobj) \
+                ( (type *) _PyObject_GC_New(typeobj) )
+#define PyObject_GC_NewVar(type, typeobj, n) \
+                ( (type *) _PyObject_GC_NewVar((typeobj), (n)) )
+
+
+/* Utility macro to help write tp_traverse functions.
+ * To use this macro, the tp_traverse function must name its arguments
+ * "visit" and "arg".  This is intended to keep tp_traverse functions
+ * looking as much alike as possible.
+ */
+#define Py_VISIT(op)                                                    \
+    do {                                                                \
+        if (op) {                                                       \
+            int vret = visit(_PyObject_CAST(op), arg);                  \
+            if (vret)                                                   \
+                return vret;                                            \
+        }                                                               \
+    } while (0)
+
+/*
  * Generic object allocator interface
  * ==================================
  */
@@ -127,6 +179,12 @@ PyAPI_FUNC(PyVarObject *) _PyObject_NewVar(PyTypeObject *, Py_ssize_t);
 #define PyObject_NewVar(type, typeobj, n) \
                 ( (type *) _PyObject_NewVar((typeobj), (n)) )
 
+#ifndef Py_LIMITED_API
+#  define Py_CPYTHON_OBJIMPL_H
+#  include  "cpython/objimpl.h"
+#  undef Py_CPYTHON_OBJIMPL_H
+#endif
+
 /* Inline functions trading binary compatibility for speed:
    PyObject_INIT() is the fast version of PyObject_Init(), and
    PyObject_INIT_VAR() is the fast version of PyObject_InitVar.
@@ -142,6 +200,13 @@ _PyObject_INIT(PyObject *op, PyTypeObject *typeobj)
         Py_INCREF(typeobj);
     }
     _Py_NewReference(op);
+    if (GC_is_heap_ptr(op)) {
+        if (PyType_IS_GC(typeobj)) {
+            GC_REGISTER_FINALIZER(_Py_AS_GC(op), _Py_Dealloc_GC_finalizer, NULL, NULL, NULL);
+        } else {
+            GC_REGISTER_FINALIZER(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
+        }
+    }
     return op;
 }
 
@@ -219,64 +284,6 @@ _PyObject_INIT_VAR(PyVarObject *op, PyTypeObject *typeobj, Py_ssize_t size)
 */
 
 
-
-/*
- * Garbage Collection Support
- * ==========================
- */
-
-/* C equivalent of gc.collect() which ignores the state of gc.enabled. */
-PyAPI_FUNC(Py_ssize_t) PyGC_Collect(void);
-
-/* Test if a type has a GC head */
-#define PyType_IS_GC(t) PyType_HasFeature((t), Py_TPFLAGS_HAVE_GC)
-
-PyAPI_FUNC(PyVarObject *) _PyObject_GC_Resize(PyVarObject *, Py_ssize_t);
-#define PyObject_GC_Resize(type, op, n) \
-                ( (type *) _PyObject_GC_Resize(_PyVarObject_CAST(op), (n)) )
-
-
-
-PyAPI_FUNC(PyObject *) _PyObject_GC_New(PyTypeObject *);
-PyAPI_FUNC(PyVarObject *) _PyObject_GC_NewVar(PyTypeObject *, Py_ssize_t);
-
-/* Tell the GC to track this object.
- *
- * See also private _PyObject_GC_TRACK() macro. */
-PyAPI_FUNC(void) PyObject_GC_Track(void *);
-
-/* Tell the GC to stop tracking this object.
- *
- * See also private _PyObject_GC_UNTRACK() macro. */
-PyAPI_FUNC(void) PyObject_GC_UnTrack(void *);
-
-PyAPI_FUNC(void) PyObject_GC_Del(void *);
-
-#define PyObject_GC_New(type, typeobj) \
-                ( (type *) _PyObject_GC_New(typeobj) )
-#define PyObject_GC_NewVar(type, typeobj, n) \
-                ( (type *) _PyObject_GC_NewVar((typeobj), (n)) )
-
-
-/* Utility macro to help write tp_traverse functions.
- * To use this macro, the tp_traverse function must name its arguments
- * "visit" and "arg".  This is intended to keep tp_traverse functions
- * looking as much alike as possible.
- */
-#define Py_VISIT(op)                                                    \
-    do {                                                                \
-        if (op) {                                                       \
-            int vret = visit(_PyObject_CAST(op), arg);                  \
-            if (vret)                                                   \
-                return vret;                                            \
-        }                                                               \
-    } while (0)
-
-#ifndef Py_LIMITED_API
-#  define Py_CPYTHON_OBJIMPL_H
-#  include  "cpython/objimpl.h"
-#  undef Py_CPYTHON_OBJIMPL_H
-#endif
 
 #ifdef __cplusplus
 }
