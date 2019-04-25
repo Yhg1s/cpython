@@ -87,6 +87,7 @@ _PyRuntime_Initialize(void)
     }
     runtime_initialized = 1;
 
+    GC_set_all_interior_pointers(1);
     GC_INIT();
 
     return _PyRuntimeState_Init(&_PyRuntime);

@@ -64,6 +64,7 @@
  * GC_THREADS support is enabled.
  */
 #define GC_THREADS 1
+/* #define GC_DEBUG 1 */
 /* Include gc.h for its intercepts of thread functions. */
 #include <gc/gc.h>
 

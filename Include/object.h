@@ -447,6 +447,8 @@ static inline void _Py_ForgetReference(PyObject *op)
 
 
 PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
+PyAPI_FUNC(void) _Py_Dealloc_finalizer(void *, void *);
+PyAPI_FUNC(void) _Py_Dealloc_GC_finalizer(void *, void *);
 
 static inline void _Py_INCREF(PyObject *op)
 {

@@ -251,13 +251,7 @@ PyObject_Init(PyObject *op, PyTypeObject *tp)
 {
     if (op == NULL)
         return PyErr_NoMemory();
-    /* Any changes should be reflected in PyObject_INIT (objimpl.h) */
-    Py_TYPE(op) = tp;
-    if (PyType_GetFlags(tp) & Py_TPFLAGS_HEAPTYPE) {
-        Py_INCREF(tp);
-    }
-    _Py_NewReference(op);
-    return op;
+    return PyObject_INIT(op, tp);
 }
 
 PyVarObject *
@@ -2203,6 +2197,29 @@ _Py_Dealloc(PyObject *op)
     _Py_INC_TPFREES(op);
 #endif
     (*dealloc)(op);
+}
+
+void
+_Py_Dealloc_GC_finalizer(void *_op, void *unused)
+{
+    PyObject *op = _Py_FROM_GC(_op);
+    assert(PyObject_IS_GC(op));
+    _Py_Dealloc_finalizer((void *)op, (void *)_op);
+}
+
+void
+_Py_Dealloc_finalizer(void *_op, void *is_gc)
+{
+    PyObject *op = (PyObject *)_op;
+    assert(is_gc == NULL ? !_Py_IS_GC(op) || _Py_IS_GC(op));
+    if (op->ob_refcnt != 0) {
+        fprintf(stderr, "object %p refcount leak (%ld)\n", op, op->ob_refcnt);
+        abort();
+    } else {
+        fprintf(stderr, "object %p not freed (refcount 0)\n", op);
+        abort();
+    }
+    _Py_Dealloc(op);
 }
 
 #ifdef __cplusplus
