@@ -2123,7 +2123,9 @@ _PyMem_DebugRawFree(void *ctx, void *p)
     _PyMem_DebugCheckAddress(api->api_id, p);
     nbytes = read_size_t(q);
     nbytes += PYMEM_DEBUG_EXTRA_BYTES;
-    memset(q, DEADBYTE, nbytes);
+    // TODO(thomas@python.org): figure out alternative that works with
+    // _Py_Dealloc_finalize, probably by writing magic values to refcnt.
+    // memset(q, DEADBYTE, nbytes);
     api->alloc.free(api->alloc.ctx, q);
 }
 
