@@ -441,7 +441,6 @@ static inline void _Py_ForgetReference(PyObject *op)
 #endif /* !Py_TRACE_REFS */
 
 
-PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 PyAPI_FUNC(void) _Py_Dealloc_finalizer(void *, void *);
 PyAPI_FUNC(void) _Py_Dealloc_GC_finalizer(void *, void *);
 
@@ -465,9 +464,6 @@ static inline void _Py_DECREF(const char *filename, int lineno,
             _Py_NegativeRefcount(filename, lineno, op);
         }
 #endif
-    }
-    else {
-        _Py_Dealloc(op);
     }
 }
 
