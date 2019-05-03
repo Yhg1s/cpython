@@ -2187,10 +2187,8 @@ _PyObject_AssertFailed(PyObject *obj, const char *expr, const char *msg,
 }
 
 
-#undef _Py_Dealloc
-
 void
-_Py_Dealloc(PyObject *op)
+_GC_Py_Dealloc(PyObject *op)
 {
     destructor dealloc = Py_TYPE(op)->tp_dealloc;
 #ifdef Py_TRACE_REFS
@@ -2216,12 +2214,8 @@ _Py_Dealloc_finalizer(void *_op, void *is_gc)
     assert(is_gc == NULL ? !PyObject_IS_GC(op) : PyObject_IS_GC(op));
     if (op->ob_refcnt != 0) {
         fprintf(stderr, "object %p refcount leak (%ld)\n", op, op->ob_refcnt);
-        abort();
-    } else {
-        fprintf(stderr, "object %p not freed (refcount 0)\n", op);
-        abort();
     }
-    _Py_Dealloc(op);
+    _GC_Py_Dealloc(op);
 }
 
 #ifdef __cplusplus
