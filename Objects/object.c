@@ -312,10 +312,10 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
     Py_ssize_t refcnt;
 
     /* Temporarily resurrect the object. */
-    if (self->ob_refcnt != 0) {
+/*    if (self->ob_refcnt != 0) {
         Py_FatalError("PyObject_CallFinalizerFromDealloc called on "
                       "object with a non-zero refcount");
-    }
+    } */
     self->ob_refcnt = 1;
 
     PyObject_CallFinalizer(self);
@@ -2213,7 +2213,7 @@ _Py_Dealloc_finalizer(void *_op, void *is_gc)
     PyObject *op = (PyObject *)_op;
     assert(is_gc == NULL ? !PyObject_IS_GC(op) : PyObject_IS_GC(op));
     if (op->ob_refcnt != 0) {
-        fprintf(stderr, "object %p refcount leak (%ld)\n", op, op->ob_refcnt);
+        // fprintf(stderr, "object %p refcount leak (%ld)\n", op, op->ob_refcnt);
     }
     _GC_Py_Dealloc(op);
 }
