@@ -119,7 +119,7 @@ PyAPI_FUNC(void) PyObject_Free(void *ptr);
 PyAPI_FUNC(Py_ssize_t) PyGC_Collect(void);
 
 /* Test if a type has a GC head */
-#define PyType_IS_GC(t) PyType_HasFeature((t), Py_TPFLAGS_HAVE_GC)
+#define PyType_IS_GC(t) (0)
 
 PyAPI_FUNC(PyVarObject *) _PyObject_GC_Resize(PyVarObject *, Py_ssize_t);
 #define PyObject_GC_Resize(type, op, n) \
@@ -201,11 +201,7 @@ _PyObject_INIT(PyObject *op, PyTypeObject *typeobj)
     }
     _Py_NewReference(op);
     if (GC_is_heap_ptr(op)) {
-        if (PyType_IS_GC(typeobj)) {
-            GC_REGISTER_FINALIZER(_Py_AS_GC(op), _Py_Dealloc_GC_finalizer, NULL, NULL, NULL);
-        } else {
-            GC_REGISTER_FINALIZER(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
-        }
+        GC_REGISTER_FINALIZER_IGNORE_SELF(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
     }
     return op;
 }

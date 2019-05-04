@@ -38,9 +38,7 @@ PyAPI_FUNC(Py_ssize_t) _PyGC_CollectIfEnabled(void);
 
 
 /* Test if an object has a GC head */
-#define PyObject_IS_GC(o) \
-    (PyType_IS_GC(Py_TYPE(o)) \
-     && (Py_TYPE(o)->tp_is_gc == NULL || Py_TYPE(o)->tp_is_gc(o)))
+#define PyObject_IS_GC(o) (0)
 
 /* GC information is stored BEFORE the object structure. */
 typedef struct {
@@ -57,7 +55,7 @@ typedef struct {
 #define _Py_FROM_GC(o) ((PyObject *)((PyGC_Head *)(o)+1))
 
 /* True if the object is currently tracked by the GC. */
-#define _PyObject_GC_IS_TRACKED(o) (_Py_AS_GC(o)->_gc_next != 0)
+#define _PyObject_GC_IS_TRACKED(o) (0)
 
 /* True if the object may be tracked by the GC in the future, or already is.
    This can be useful to implement some optimizations. */

@@ -1795,26 +1795,8 @@ PyInit_gc(void)
 Py_ssize_t
 PyGC_Collect(void)
 {
-    struct _gc_runtime_state *state = &_PyRuntime.gc;
-    if (!state->enabled) {
-        return 0;
-    }
-
-    Py_ssize_t n;
-    if (state->collecting) {
-        /* already collecting, don't do anything */
-        n = 0;
-    }
-    else {
-        PyObject *exc, *value, *tb;
-        state->collecting = 1;
-        PyErr_Fetch(&exc, &value, &tb);
-        n = collect_with_callback(state, NUM_GENERATIONS - 1);
-        PyErr_Restore(exc, value, tb);
-        state->collecting = 0;
-    }
-
-    return n;
+    GC_gcollect();
+    return 0;
 }
 
 Py_ssize_t
@@ -1826,78 +1808,19 @@ _PyGC_CollectIfEnabled(void)
 Py_ssize_t
 _PyGC_CollectNoFail(void)
 {
-    assert(!PyErr_Occurred());
-
-    struct _gc_runtime_state *state = &_PyRuntime.gc;
-    Py_ssize_t n;
-
-    /* Ideally, this function is only called on interpreter shutdown,
-       and therefore not recursively.  Unfortunately, when there are daemon
-       threads, a daemon thread can start a cyclic garbage collection
-       during interpreter shutdown (and then never finish it).
-       See http://bugs.python.org/issue8713#msg195178 for an example.
-       */
-    if (state->collecting) {
-        n = 0;
-    }
-    else {
-        state->collecting = 1;
-        n = collect(state, NUM_GENERATIONS - 1, NULL, NULL, 1);
-        state->collecting = 0;
-    }
-    return n;
+    GC_gcollect();
+    return 0;
 }
 
 void
 _PyGC_DumpShutdownStats(_PyRuntimeState *runtime)
 {
-    struct _gc_runtime_state *state = &runtime->gc;
-    if (!(state->debug & DEBUG_SAVEALL)
-        && state->garbage != NULL && PyList_GET_SIZE(state->garbage) > 0) {
-        const char *message;
-        if (state->debug & DEBUG_UNCOLLECTABLE)
-            message = "gc: %zd uncollectable objects at " \
-                "shutdown";
-        else
-            message = "gc: %zd uncollectable objects at " \
-                "shutdown; use gc.set_debug(gc.DEBUG_UNCOLLECTABLE) to list them";
-        /* PyErr_WarnFormat does too many things and we are at shutdown,
-           the warnings module's dependencies (e.g. linecache) may be gone
-           already. */
-        if (PyErr_WarnExplicitFormat(PyExc_ResourceWarning, "gc", 0,
-                                     "gc", NULL, message,
-                                     PyList_GET_SIZE(state->garbage)))
-            PyErr_WriteUnraisable(NULL);
-        if (state->debug & DEBUG_UNCOLLECTABLE) {
-            PyObject *repr = NULL, *bytes = NULL;
-            repr = PyObject_Repr(state->garbage);
-            if (!repr || !(bytes = PyUnicode_EncodeFSDefault(repr)))
-                PyErr_WriteUnraisable(state->garbage);
-            else {
-                PySys_WriteStderr(
-                    "      %s\n",
-                    PyBytes_AS_STRING(bytes)
-                    );
-            }
-            Py_XDECREF(repr);
-            Py_XDECREF(bytes);
-        }
-    }
+    // GC_dump();
 }
 
 void
 _PyGC_Fini(_PyRuntimeState *runtime)
 {
-    struct _gc_runtime_state *state = &runtime->gc;
-    Py_CLEAR(state->garbage);
-    Py_CLEAR(state->callbacks);
-}
-
-/* for debugging */
-void
-_PyGC_Dump(PyGC_Head *g)
-{
-    _PyObject_Dump(FROM_GC(g));
 }
 
 /* extension modules might be compiled with GC support so these
@@ -1906,57 +1829,24 @@ _PyGC_Dump(PyGC_Head *g)
 void
 PyObject_GC_Track(void *op_raw)
 {
-    PyObject *op = _PyObject_CAST(op_raw);
-    if (_PyObject_GC_IS_TRACKED(op)) {
-        _PyObject_ASSERT_FAILED_MSG(op,
-                                    "object already tracked "
-                                    "by the garbage collector");
-    }
-    _PyObject_GC_TRACK(op);
 }
 
 void
 PyObject_GC_UnTrack(void *op_raw)
 {
-    PyObject *op = _PyObject_CAST(op_raw);
-    /* Obscure:  the Py_TRASHCAN mechanism requires that we be able to
-     * call PyObject_GC_UnTrack twice on an object.
-     */
-    if (_PyObject_GC_IS_TRACKED(op)) {
-        _PyObject_GC_UNTRACK(op);
-    }
 }
 
 static PyObject *
-_PyObject_GC_Alloc(int use_calloc, size_t basicsize)
+_PyObject_GC_Alloc(int use_calloc, size_t size)
 {
     struct _gc_runtime_state *state = &_PyRuntime.gc;
     PyObject *op;
-    PyGC_Head *g;
-    size_t size;
-    if (basicsize > PY_SSIZE_T_MAX - sizeof(PyGC_Head))
-        return PyErr_NoMemory();
-    size = sizeof(PyGC_Head) + basicsize;
     if (use_calloc)
-        g = (PyGC_Head *)PyObject_Calloc(1, size);
+        op = PyObject_Calloc(1, size);
     else
-        g = (PyGC_Head *)PyObject_Malloc(size);
-    if (g == NULL)
+        op = PyObject_Malloc(size);
+    if (op == NULL)
         return PyErr_NoMemory();
-    assert(((uintptr_t)g & 3) == 0);  // g must be aligned 4bytes boundary
-    g->_gc_next = 0;
-    g->_gc_prev = 0;
-    state->generations[0].count++; /* number of allocated GC objects */
-    if (state->generations[0].count > state->generations[0].threshold &&
-        state->enabled &&
-        state->generations[0].threshold &&
-        !state->collecting &&
-        !PyErr_Occurred()) {
-        state->collecting = 1;
-        collect_generations(state);
-        state->collecting = 0;
-    }
-    op = FROM_GC(g);
     return op;
 }
 
@@ -2002,16 +1892,10 @@ PyVarObject *
 _PyObject_GC_Resize(PyVarObject *op, Py_ssize_t nitems)
 {
     const size_t basicsize = _PyObject_VAR_SIZE(Py_TYPE(op), nitems);
-    _PyObject_ASSERT((PyObject *)op, !_PyObject_GC_IS_TRACKED(op));
-    if (basicsize > PY_SSIZE_T_MAX - sizeof(PyGC_Head)) {
-        return (PyVarObject *)PyErr_NoMemory();
-    }
 
-    PyGC_Head *g = AS_GC(op);
-    g = (PyGC_Head *)PyObject_REALLOC(g,  sizeof(PyGC_Head) + basicsize);
-    if (g == NULL)
+    op = PyObject_REALLOC(op, basicsize);
+    if (op == NULL)
         return (PyVarObject *)PyErr_NoMemory();
-    op = (PyVarObject *) FROM_GC(g);
     Py_SIZE(op) = nitems;
     return op;
 }
@@ -2019,13 +1903,4 @@ _PyObject_GC_Resize(PyVarObject *op, Py_ssize_t nitems)
 void
 PyObject_GC_Del(void *op)
 {
-    PyGC_Head *g = AS_GC(op);
-    if (_PyObject_GC_IS_TRACKED(op)) {
-        gc_list_remove(g);
-    }
-    struct _gc_runtime_state *state = &_PyRuntime.gc;
-    if (state->generations[0].count > 0) {
-        state->generations[0].count--;
-    }
-    PyObject_FREE(g);
 }
