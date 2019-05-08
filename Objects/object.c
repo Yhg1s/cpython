@@ -2220,6 +2220,25 @@ _Py_Dealloc_finalizer(void *_op, void *is_gc)
     _GC_Py_Dealloc(op);
 }
 
+void
+_Py_Dealloc_GC_finalizer(void *_op, void *unused)
+{
+    PyObject *op = _Py_FROM_GC(_op);
+    assert(PyObject_IS_GC(op));
+    _Py_Dealloc_finalizer((void *)op, (void *)_op);
+}
+
+void
+_Py_Dealloc_finalizer(void *_op, void *is_gc)
+{
+    PyObject *op = (PyObject *)_op;
+    assert(is_gc == NULL ? !PyObject_IS_GC(op) : PyObject_IS_GC(op));
+    if (op->ob_refcnt != 0) {
+        // fprintf(stderr, "object %p refcount leak (%ld)\n", op, op->ob_refcnt);
+    }
+    _GC_Py_Dealloc(op);
+}
+
 #ifdef __cplusplus
 }
 #endif
