@@ -2190,6 +2190,7 @@ _PyObject_AssertFailed(PyObject *obj, const char *expr, const char *msg,
 void
 _GC_Py_Dealloc(PyObject *op)
 {
+    PyGILState_STATE state = PyGILState_Ensure();
     destructor dealloc = Py_TYPE(op)->tp_dealloc;
 #ifdef Py_TRACE_REFS
     _Py_ForgetReference(op);
@@ -2197,6 +2198,7 @@ _GC_Py_Dealloc(PyObject *op)
     _Py_INC_TPFREES(op);
 #endif
     (*dealloc)(op);
+    PyGILState_Release(state);
 }
 
 void

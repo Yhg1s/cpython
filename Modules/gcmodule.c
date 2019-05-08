@@ -671,7 +671,7 @@ handle_weakrefs(PyGC_Head *unreachable, PyGC_Head *old)
      * pass completes.
      */
     for (gc = GC_NEXT(unreachable); gc != unreachable; gc = next) {
-        PyWeakReference **wrlist;
+        GC_hidden_pointer *wrlist;
 
         op = FROM_GC(gc);
         next = GC_NEXT(gc);
@@ -680,14 +680,15 @@ handle_weakrefs(PyGC_Head *unreachable, PyGC_Head *old)
             continue;
 
         /* It supports weakrefs.  Does it have any? */
-        wrlist = (PyWeakReference **)
-                                PyObject_GET_WEAKREFS_LISTPTR(op);
+        wrlist = PyObject_GET_WEAKREFS_LISTPTR(op);
 
         /* `op` may have some weakrefs.  March over the list, clear
          * all the weakrefs, and move the weakrefs with callbacks
          * that must be called into wrcb_to_call.
          */
-        for (wr = *wrlist; wr != NULL; wr = *wrlist) {
+        for (wr = (PyWeakReference *)_Py_REVEAL_POINTER(*wrlist);
+             wr != NULL;
+             wr = (PyWeakReference *)_Py_REVEAL_POINTER(*wrlist)) {
             PyGC_Head *wrasgc;                  /* AS_GC(wr) */
 
             /* _PyWeakref_ClearRef clears the weakref but leaves
