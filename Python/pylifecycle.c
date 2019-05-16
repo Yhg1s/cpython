@@ -6,8 +6,9 @@
 
 #include "Python-ast.h"
 #undef Yield   /* undefine macro conflicting with <winbase.h> */
-#include "pycore_coreconfig.h"
+#include "pycore_ceval.h"
 #include "pycore_context.h"
+#include "pycore_coreconfig.h"
 #include "pycore_fileutils.h"
 #include "pycore_hamt.h"
 #include "pycore_pathconfig.h"
@@ -154,12 +155,13 @@ init_importlib(PyInterpreterState *interp, PyObject *sysmod)
     PyObject *importlib;
     PyObject *impmod;
     PyObject *value;
+    int verbose = interp->core_config.verbose;
 
     /* Import _importlib through its frozen version, _frozen_importlib. */
     if (PyImport_ImportFrozenModule("_frozen_importlib") <= 0) {
         return _Py_INIT_ERR("can't import _frozen_importlib");
     }
-    else if (Py_VerboseFlag) {
+    else if (verbose) {
         PySys_FormatStderr("import _frozen_importlib # frozen\n");
     }
     importlib = PyImport_AddModule("_frozen_importlib");
@@ -179,7 +181,7 @@ init_importlib(PyInterpreterState *interp, PyObject *sysmod)
     if (impmod == NULL) {
         return _Py_INIT_ERR("can't import _imp");
     }
-    else if (Py_VerboseFlag) {
+    else if (verbose) {
         PySys_FormatStderr("import _imp # builtin\n");
     }
     if (_PyImport_SetModuleString("_imp", impmod) < 0) {
@@ -209,7 +211,7 @@ init_importlib_external(PyInterpreterState *interp)
         return _Py_INIT_ERR("external importer setup failed");
     }
     Py_DECREF(value);
-    return _PyImportZip_Init();
+    return _PyImportZip_Init(interp);
 }
 
 /* Helper functions to better handle the legacy C locale
@@ -532,7 +534,7 @@ pycore_create_interpreter(_PyRuntimeState *runtime,
        another running thread (see issue #9901).
        Instead we destroy the previously created GIL here, which ensures
        that we can call Py_Initialize / Py_FinalizeEx multiple times. */
-    _PyEval_FiniThreads();
+    _PyEval_FiniThreads(&runtime->ceval);
 
     /* Auto-thread-state API */
     _PyGILState_Init(runtime, interp, tstate);
@@ -975,6 +977,21 @@ _Py_InitializeMainInterpreter(_PyRuntimeState *runtime,
     return _Py_INIT_OK();
 }
 
+
+_PyInitError
+_Py_InitializeMain(void)
+{
+    _PyInitError err = _PyRuntime_Initialize();
+    if (_Py_INIT_FAILED(err)) {
+        return err;
+    }
+    _PyRuntimeState *runtime = &_PyRuntime;
+    PyInterpreterState *interp = _PyRuntimeState_GetThreadState(runtime)->interp;
+
+    return _Py_InitializeMainInterpreter(runtime, interp);
+}
+
+
 #undef _INIT_DEBUG_PRINT
 
 static _PyInitError
@@ -995,7 +1012,7 @@ init_python(const _PyCoreConfig *config, const _PyArgv *args)
     }
     config = &interp->core_config;
 
-    if (!config->_frozen) {
+    if (config->_init_main) {
         err = _Py_InitializeMainInterpreter(runtime, interp);
         if (_Py_INIT_FAILED(err)) {
             return err;
@@ -1142,10 +1159,10 @@ Py_FinalizeEx(void)
     wait_for_thread_shutdown();
 
     // Make any remaining pending calls.
-    _Py_FinishPendingCalls();
+    _Py_FinishPendingCalls(runtime);
 
     /* Get current thread state and interpreter pointer */
-    PyThreadState *tstate = _PyThreadState_GET();
+    PyThreadState *tstate = _PyRuntimeState_GetThreadState(runtime);
     PyInterpreterState *interp = tstate->interp;
 
     /* The interpreter is still entirely intact at this point, and the
@@ -1295,7 +1312,7 @@ Py_FinalizeEx(void)
     PyDict_Fini();
     PySlice_Fini();
     _PyGC_Fini(runtime);
-    _PyWarnings_Fini(runtime);
+    _PyWarnings_Fini(interp);
     _Py_HashRandomization_Fini();
     _PyArg_Fini();
     PyAsyncGen_Fini();
@@ -2129,17 +2146,14 @@ Py_FatalError(const char *msg)
 void _Py_NO_RETURN
 _Py_ExitInitError(_PyInitError err)
 {
-    assert(_Py_INIT_FAILED(err));
     if (_Py_INIT_IS_EXIT(err)) {
-#ifdef MS_WINDOWS
-        ExitProcess(err.exitcode);
-#else
         exit(err.exitcode);
-#endif
+    }
+    else if (_Py_INIT_IS_ERROR(err)) {
+        fatal_error(err._func, err.err_msg, 1);
     }
     else {
-        assert(_Py_INIT_IS_ERROR(err));
-        fatal_error(err._func, err.err_msg, 1);
+        Py_FatalError("_Py_ExitInitError() must not be called on success");
     }
 }
 

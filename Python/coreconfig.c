@@ -628,6 +628,7 @@ _PyCoreConfig_Copy(_PyCoreConfig *config, const _PyCoreConfig *config2)
     COPY_WSTR_ATTR(program_name);
     COPY_WSTR_ATTR(program);
 
+    COPY_ATTR(parse_argv);
     COPY_WSTRLIST(argv);
     COPY_WSTRLIST(warnoptions);
     COPY_WSTRLIST(xoptions);
@@ -653,6 +654,7 @@ _PyCoreConfig_Copy(_PyCoreConfig *config, const _PyCoreConfig *config2)
     COPY_ATTR(verbose);
     COPY_ATTR(quiet);
     COPY_ATTR(user_site_directory);
+    COPY_ATTR(configure_c_stdio);
     COPY_ATTR(buffered_stdio);
     COPY_WSTR_ATTR(filesystem_encoding);
     COPY_WSTR_ATTR(filesystem_errors);
@@ -666,7 +668,8 @@ _PyCoreConfig_Copy(_PyCoreConfig *config, const _PyCoreConfig *config2)
     COPY_WSTR_ATTR(run_module);
     COPY_WSTR_ATTR(run_filename);
     COPY_WSTR_ATTR(check_hash_pycs_mode);
-    COPY_ATTR(_frozen);
+    COPY_ATTR(pathconfig_warnings);
+    COPY_ATTR(_init_main);
 
 #undef COPY_ATTR
 #undef COPY_WSTR_ATTR
@@ -727,6 +730,7 @@ _PyCoreConfig_AsDict(const _PyCoreConfig *config)
     SET_ITEM_WSTR(filesystem_errors);
     SET_ITEM_WSTR(pycache_prefix);
     SET_ITEM_WSTR(program_name);
+    SET_ITEM_INT(parse_argv);
     SET_ITEM_WSTRLIST(argv);
     SET_ITEM_WSTR(program);
     SET_ITEM_WSTRLIST(xoptions);
@@ -752,6 +756,7 @@ _PyCoreConfig_AsDict(const _PyCoreConfig *config)
     SET_ITEM_INT(verbose);
     SET_ITEM_INT(quiet);
     SET_ITEM_INT(user_site_directory);
+    SET_ITEM_INT(configure_c_stdio);
     SET_ITEM_INT(buffered_stdio);
     SET_ITEM_WSTR(stdio_encoding);
     SET_ITEM_WSTR(stdio_errors);
@@ -764,7 +769,8 @@ _PyCoreConfig_AsDict(const _PyCoreConfig *config)
     SET_ITEM_WSTR(run_filename);
     SET_ITEM_INT(_install_importlib);
     SET_ITEM_WSTR(check_hash_pycs_mode);
-    SET_ITEM_INT(_frozen);
+    SET_ITEM_INT(pathconfig_warnings);
+    SET_ITEM_INT(_init_main);
 
     return dict;
 
@@ -853,7 +859,7 @@ _PyCoreConfig_GetGlobalConfig(_PyCoreConfig *config)
 #ifdef MS_WINDOWS
     COPY_FLAG(legacy_windows_stdio, Py_LegacyWindowsStdioFlag);
 #endif
-    COPY_FLAG(_frozen, Py_FrozenFlag);
+    COPY_NOT_FLAG(pathconfig_warnings, Py_FrozenFlag);
 
     COPY_NOT_FLAG(buffered_stdio, Py_UnbufferedStdioFlag);
     COPY_NOT_FLAG(site_import, Py_NoSiteFlag);
@@ -890,7 +896,7 @@ _PyCoreConfig_SetGlobalConfig(const _PyCoreConfig *config)
 #ifdef MS_WINDOWS
     COPY_FLAG(legacy_windows_stdio, Py_LegacyWindowsStdioFlag);
 #endif
-    COPY_FLAG(_frozen, Py_FrozenFlag);
+    COPY_NOT_FLAG(pathconfig_warnings, Py_FrozenFlag);
 
     COPY_NOT_FLAG(buffered_stdio, Py_UnbufferedStdioFlag);
     COPY_NOT_FLAG(site_import, Py_NoSiteFlag);
@@ -1490,6 +1496,8 @@ config_read(_PyCoreConfig *config, _PyPreCmdline *cmdline)
     }
 
     if (config->isolated > 0) {
+        /* _PyPreCmdline_Read() sets use_environment to 0 if isolated is set,
+           _PyPreCmdline_SetCoreConfig() overrides config->use_environment. */
         config->user_site_directory = 0;
     }
 
@@ -1576,7 +1584,6 @@ config_read(_PyCoreConfig *config, _PyPreCmdline *cmdline)
             return _Py_INIT_NO_MEMORY();
         }
     }
-
     return _Py_INIT_OK();
 }
 
@@ -1626,7 +1633,10 @@ void
 _PyCoreConfig_Write(const _PyCoreConfig *config, _PyRuntimeState *runtime)
 {
     _PyCoreConfig_SetGlobalConfig(config);
-    config_init_stdio(config);
+
+    if (config->configure_c_stdio) {
+        config_init_stdio(config);
+    }
 
     /* Write the new pre-configuration into _PyRuntime */
     _PyPreConfig *preconfig = &runtime->preconfig;
@@ -1660,7 +1670,7 @@ config_usage(int error, const wchar_t* program)
 /* Parse the command line arguments */
 static _PyInitError
 config_parse_cmdline(_PyCoreConfig *config, _PyPreCmdline *precmdline,
-                     _PyWstrList *warnoptions)
+                     _PyWstrList *warnoptions, int *opt_index)
 {
     _PyInitError err;
     const _PyWstrList *argv = &precmdline->argv;
@@ -1833,8 +1843,7 @@ config_parse_cmdline(_PyCoreConfig *config, _PyPreCmdline *precmdline,
         _PyOS_optind--;
     }
 
-    /* -c and -m options are exclusive */
-    assert(!(config->run_command != NULL && config->run_module != NULL));
+    *opt_index = _PyOS_optind;
 
     return _Py_INIT_OK();
 }
@@ -1978,13 +1987,14 @@ config_init_warnoptions(_PyCoreConfig *config,
 
 
 static _PyInitError
-config_init_argv(_PyCoreConfig *config, const _PyPreCmdline *cmdline)
+config_update_argv(_PyCoreConfig *config, const _PyPreCmdline *cmdline,
+                   int opt_index)
 {
     const _PyWstrList *cmdline_argv = &cmdline->argv;
     _PyWstrList config_argv = _PyWstrList_INIT;
 
     /* Copy argv to be able to modify it (to force -c/-m) */
-    if (cmdline_argv->length <= _PyOS_optind) {
+    if (cmdline_argv->length <= opt_index) {
         /* Ensure at least one (empty) argument is seen */
         if (_PyWstrList_Append(&config_argv, L"") < 0) {
             return _Py_INIT_NO_MEMORY();
@@ -1992,8 +2002,8 @@ config_init_argv(_PyCoreConfig *config, const _PyPreCmdline *cmdline)
     }
     else {
         _PyWstrList slice;
-        slice.length = cmdline_argv->length - _PyOS_optind;
-        slice.items = &cmdline_argv->items[_PyOS_optind];
+        slice.length = cmdline_argv->length - opt_index;
+        slice.items = &cmdline_argv->items[opt_index];
         if (_PyWstrList_Copy(&config_argv, &slice) < 0) {
             return _Py_INIT_NO_MEMORY();
         }
@@ -2058,14 +2068,25 @@ config_read_cmdline(_PyCoreConfig *config, _PyPreCmdline *precmdline)
     _PyWstrList cmdline_warnoptions = _PyWstrList_INIT;
     _PyWstrList env_warnoptions = _PyWstrList_INIT;
 
-    err = config_parse_cmdline(config, precmdline, &cmdline_warnoptions);
-    if (_Py_INIT_FAILED(err)) {
-        goto done;
+    if (config->parse_argv < 0) {
+        config->parse_argv = 1;
+    }
+    if (config->configure_c_stdio < 0) {
+        config->configure_c_stdio = 1;
     }
 
-    err = config_init_argv(config, precmdline);
-    if (_Py_INIT_FAILED(err)) {
-        goto done;
+    if (config->parse_argv) {
+        int opt_index;
+        err = config_parse_cmdline(config, precmdline, &cmdline_warnoptions,
+                                   &opt_index);
+        if (_Py_INIT_FAILED(err)) {
+            goto done;
+        }
+
+        err = config_update_argv(config, precmdline, opt_index);
+        if (_Py_INIT_FAILED(err)) {
+            goto done;
+        }
     }
 
     err = config_read(config, precmdline);
@@ -2157,7 +2178,9 @@ _PyCoreConfig_SetWideArgv(_PyCoreConfig *config, int argc, wchar_t **argv)
 
    * Command line arguments
    * Environment variables
-   * Py_xxx global configuration variables */
+   * Py_xxx global configuration variables
+
+   The only side effects are to modify config and to call _Py_SetArgcArgv(). */
 _PyInitError
 _PyCoreConfig_Read(_PyCoreConfig *config)
 {
@@ -2212,14 +2235,20 @@ _PyCoreConfig_Read(_PyCoreConfig *config)
     assert(config->verbose >= 0);
     assert(config->quiet >= 0);
     assert(config->user_site_directory >= 0);
+    assert(config->parse_argv >= 0);
+    assert(config->configure_c_stdio >= 0);
     assert(config->buffered_stdio >= 0);
     assert(config->program_name != NULL);
     assert(config->program != NULL);
     assert(_PyWstrList_CheckConsistency(&config->argv));
+    /* sys.argv must be non-empty: empty argv is replaced with [''] */
+    assert(config->argv.length >= 1);
     assert(_PyWstrList_CheckConsistency(&config->xoptions));
     assert(_PyWstrList_CheckConsistency(&config->warnoptions));
     assert(_PyWstrList_CheckConsistency(&config->module_search_paths));
     if (config->_install_importlib) {
+        assert(config->use_module_search_paths != 0);
+        /* don't check config->module_search_paths */
         assert(config->executable != NULL);
         assert(config->prefix != NULL);
         assert(config->base_prefix != NULL);
@@ -2236,9 +2265,11 @@ _PyCoreConfig_Read(_PyCoreConfig *config)
 #ifdef MS_WINDOWS
     assert(config->legacy_windows_stdio >= 0);
 #endif
+    /* -c and -m options are exclusive */
+    assert(!(config->run_command != NULL && config->run_module != NULL));
     assert(config->check_hash_pycs_mode != NULL);
     assert(config->_install_importlib >= 0);
-    assert(config->_frozen >= 0);
+    assert(config->pathconfig_warnings >= 0);
 
     err = _Py_INIT_OK();
 

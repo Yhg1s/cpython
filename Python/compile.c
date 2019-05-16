@@ -24,6 +24,7 @@
 #include "Python.h"
 
 #include "Python-ast.h"
+#include "pycore_pystate.h"   /* _PyInterpreterState_GET_UNSAFE() */
 #include "ast.h"
 #include "code.h"
 #include "symtable.h"
@@ -310,6 +311,7 @@ PyAST_CompileObject(mod_ty mod, PyObject *filename, PyCompilerFlags *flags,
     PyCodeObject *co = NULL;
     PyCompilerFlags local_flags;
     int merged;
+    _PyCoreConfig *config = &_PyInterpreterState_GET_UNSAFE()->core_config;
 
     if (!__doc__) {
         __doc__ = PyUnicode_InternFromString("__doc__");
@@ -338,7 +340,7 @@ PyAST_CompileObject(mod_ty mod, PyObject *filename, PyCompilerFlags *flags,
     c.c_future->ff_features = merged;
     flags->cf_flags = merged;
     c.c_flags = flags;
-    c.c_optimize = (optimize == -1) ? Py_OptimizeFlag : optimize;
+    c.c_optimize = (optimize == -1) ? config->optimization_level : optimize;
     c.c_nestlevel = 0;
 
     if (!_PyAST_Optimize(mod, arena, c.c_optimize)) {
@@ -3946,8 +3948,8 @@ compiler_formatted_value(struct compiler *c, expr_ty e)
     /* Our oparg encodes 2 pieces of information: the conversion
        character, and whether or not a format_spec was provided.
 
-       Convert the conversion char to 2 bits:
-       None: 000  0x0  FVC_NONE
+       Convert the conversion char to 3 bits:
+           : 000  0x0  FVC_NONE   The default if nothing specified.
        !s  : 001  0x1  FVC_STR
        !r  : 010  0x2  FVC_REPR
        !a  : 011  0x3  FVC_ASCII
@@ -3957,19 +3959,26 @@ compiler_formatted_value(struct compiler *c, expr_ty e)
        no  : 000  0x0
     */
 
+    int conversion = e->v.FormattedValue.conversion;
     int oparg;
 
-    /* Evaluate the expression to be formatted. */
+    if (e->v.FormattedValue.expr_text) {
+        /* Push the text of the expression (which already has the '=' in
+           it. */
+        ADDOP_LOAD_CONST(c, e->v.FormattedValue.expr_text);
+    }
+
+    /* The expression to be formatted. */
     VISIT(c, expr, e->v.FormattedValue.value);
 
-    switch (e->v.FormattedValue.conversion) {
+    switch (conversion) {
     case 's': oparg = FVC_STR;   break;
     case 'r': oparg = FVC_REPR;  break;
     case 'a': oparg = FVC_ASCII; break;
     case -1:  oparg = FVC_NONE;  break;
     default:
-        PyErr_SetString(PyExc_SystemError,
-                        "Unrecognized conversion character");
+        PyErr_Format(PyExc_SystemError,
+                     "Unrecognized conversion character %d", conversion);
         return 0;
     }
     if (e->v.FormattedValue.format_spec) {
@@ -3980,6 +3989,12 @@ compiler_formatted_value(struct compiler *c, expr_ty e)
 
     /* And push our opcode and oparg */
     ADDOP_I(c, FORMAT_VALUE, oparg);
+
+    /* If we have expr_text, join the 2 strings on the stack. */
+    if (e->v.FormattedValue.expr_text) {
+        ADDOP_I(c, BUILD_STRING, 2);
+    }
+
     return 1;
 }
 
