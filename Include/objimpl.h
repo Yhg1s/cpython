@@ -200,17 +200,31 @@ _PyObject_INIT(PyObject *op, PyTypeObject *typeobj)
         Py_INCREF(typeobj);
     }
     _Py_NewReference(op);
-    /* Assume tp_dealloc is only used to clear refs (unnecessary when using
-     * libgc), call weakref callbacks, and/or call tp_del/tp_finalize, so
-     * only register a finalizer if we may need to do the latter two of
-     * those. */
-    if (GC_is_heap_ptr(op) && (typeobj->tp_finalize != NULL ||
-                               typeobj->tp_del != NULL ||
-                               typeobj->tp_weaklistoffset != 0)) {
-        GC_REGISTER_FINALIZER(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
-    }
     return op;
 }
+
+/* Potentially register a finalizer. Call when creating the object, when
+ * tp_finalize/tp_del are changed, a first weakref is added or a last
+ * weakref is removed. */
+static inline void
+_PyObject_ReconsiderFinalizer(PyObject *op)
+{
+    if (!GC_is_heap_ptr(op))
+        return;
+    /* Assume tp_dealloc is only used to clear refs (unnecessary when using
+     * libgc), call weakref callbacks, and/or call tp_del/tp_finalize, so
+     * register a finalizer if we may need to do the latter two of
+     * those, and remove it if we don't. */
+    if (Py_TYPE(op)->tp_finalize != NULL ||
+        Py_TYPE(op)->tp_del != NULL ||
+        (Py_TYPE(op)->tp_weaklistoffset != 0 &&
+         _Py_REVEAL_POINTER(PyObject_GET_WEAKREFS_LISTPTR(op)) != NULL)) {
+        GC_REGISTER_FINALIZER(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
+    } else {
+        GC_REGISTER_FINALIZER(op, NULL, NULL, NULL, NULL);
+    }
+}
+
 
 #define PyObject_INIT(op, typeobj) \
     _PyObject_INIT(_PyObject_CAST(op), (typeobj))

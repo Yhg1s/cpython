@@ -90,6 +90,7 @@ clear_weakref(PyWeakReference *self)
             ref->wr_prev = self->wr_prev;
         self->wr_prev = 0;
         self->wr_next = 0;
+        _PyObject_ReconsiderFinalizer(ob);
     }
     if (callback != NULL) {
         Py_DECREF(callback);
@@ -346,6 +347,7 @@ weakref___new__(PyTypeObject *type, PyObject *args, PyObject *kwargs)
                 else
                     insert_after(self, prev);
             }
+            _PyObject_ReconsiderFinalizer(ob);
         }
     }
     return (PyObject *)self;
@@ -811,6 +813,7 @@ PyWeakref_NewRef(PyObject *ob, PyObject *callback)
                 else
                     insert_after(result, prev);
             }
+            _PyObject_ReconsiderFinalizer(ob);
         }
     }
     return (PyObject *) result;
@@ -874,6 +877,7 @@ PyWeakref_NewProxy(PyObject *ob, PyObject *callback)
                 insert_head(result, list);
             else
                 insert_after(result, prev);
+            _PyObject_ReconsiderFinalizer(ob);
         skip_insert:
             ;
         }
