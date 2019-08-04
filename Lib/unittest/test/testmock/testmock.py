@@ -9,7 +9,7 @@ from unittest import mock
 from unittest.mock import (
     call, DEFAULT, patch, sentinel,
     MagicMock, Mock, NonCallableMock,
-    NonCallableMagicMock, _Call, _CallList,
+    NonCallableMagicMock, AsyncMock, _Call, _CallList,
     create_autospec
 )
 
@@ -35,6 +35,9 @@ class Something(object):
 
     @staticmethod
     def smeth(a, b, c, d=None): pass
+
+
+def something(a): pass
 
 
 class MockTest(unittest.TestCase):
@@ -1618,7 +1621,8 @@ class MockTest(unittest.TestCase):
 
 
     def test_adding_child_mock(self):
-        for Klass in NonCallableMock, Mock, MagicMock, NonCallableMagicMock:
+        for Klass in (NonCallableMock, Mock, MagicMock, NonCallableMagicMock,
+                      AsyncMock):
             mock = Klass()
 
             mock.foo = Mock()
@@ -1700,6 +1704,19 @@ class MockTest(unittest.TestCase):
         self.assertEqual(lines[0], 'Remarkable\n')
         self.assertEqual(lines[1], 'Norwegian Blue')
         self.assertEqual(list(f1), [])
+
+    def test_mock_open_using_next(self):
+        mocked_open = mock.mock_open(read_data='1st line\n2nd line\n3rd line')
+        f1 = mocked_open('a-name')
+        line1 = next(f1)
+        line2 = f1.__next__()
+        lines = [line for line in f1]
+        self.assertEqual(line1, '1st line\n')
+        self.assertEqual(line2, '2nd line\n')
+        self.assertEqual(lines[0], '3rd line')
+        self.assertEqual(list(f1), [])
+        with self.assertRaises(StopIteration):
+            next(f1)
 
     def test_mock_open_write(self):
         # Test exception in file writing write()
@@ -1794,6 +1811,26 @@ class MockTest(unittest.TestCase):
                 self.assertEqual(m.mock_calls, call().foo().call_list())
 
 
+    def test_attach_mock_patch_autospec(self):
+        parent = Mock()
+
+        with mock.patch(f'{__name__}.something', autospec=True) as mock_func:
+            self.assertEqual(mock_func.mock._extract_mock_name(), 'something')
+            parent.attach_mock(mock_func, 'child')
+            parent.child(1)
+            something(2)
+            mock_func(3)
+
+            parent_calls = [call.child(1), call.child(2), call.child(3)]
+            child_calls = [call(1), call(2), call(3)]
+            self.assertEqual(parent.mock_calls, parent_calls)
+            self.assertEqual(parent.child.mock_calls, child_calls)
+            self.assertEqual(something.mock_calls, child_calls)
+            self.assertEqual(mock_func.mock_calls, child_calls)
+            self.assertIn('mock.child', repr(parent.child.mock))
+            self.assertEqual(mock_func.mock._extract_mock_name(), 'mock.child')
+
+
     def test_attribute_deletion(self):
         for mock in (Mock(), MagicMock(), NonCallableMagicMock(),
                      NonCallableMock()):
@@ -1877,6 +1914,20 @@ class MockTest(unittest.TestCase):
 
         self.assertRaises(TypeError, mock.child, 1)
         self.assertEqual(mock.mock_calls, [call.child(1, 2)])
+        self.assertIn('mock.child', repr(mock.child.mock))
+
+    def test_parent_propagation_with_autospec_attach_mock(self):
+
+        def foo(a, b): pass
+
+        parent = Mock()
+        parent.attach_mock(create_autospec(foo, name='bar'), 'child')
+        parent.child(1, 2)
+
+        self.assertRaises(TypeError, parent.child, 1)
+        self.assertEqual(parent.child.mock_calls, [call.child(1, 2)])
+        self.assertIn('mock.child', repr(parent.child.mock))
+
 
     def test_isinstance_under_settrace(self):
         # bpo-36593 : __class__ is not set for a class that has __class__

@@ -126,6 +126,9 @@ WIN32 is still required for the locale module.
 #define COMPILER _Py_PASTE_VERSION("64 bit (AMD64)")
 #endif /* __INTEL_COMPILER */
 #define PYD_PLATFORM_TAG "win_amd64"
+#elif defined(_M_ARM64)
+#define COMPILER _Py_PASTE_VERSION("64 bit (ARM64)")
+#define PYD_PLATFORM_TAG "win_arm64"
 #else
 #define COMPILER _Py_PASTE_VERSION("64 bit (Unknown)")
 #endif
