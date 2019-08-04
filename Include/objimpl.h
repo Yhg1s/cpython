@@ -200,8 +200,14 @@ _PyObject_INIT(PyObject *op, PyTypeObject *typeobj)
         Py_INCREF(typeobj);
     }
     _Py_NewReference(op);
-    if (GC_is_heap_ptr(op)) {
-        GC_REGISTER_FINALIZER_IGNORE_SELF(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
+    /* Assume tp_dealloc is only used to clear refs (unnecessary when using
+     * libgc), call weakref callbacks, and/or call tp_del/tp_finalize, so
+     * only register a finalizer if we may need to do the latter two of
+     * those. */
+    if (GC_is_heap_ptr(op) && (typeobj->tp_finalize != NULL ||
+                               typeobj->tp_del != NULL ||
+                               typeobj->tp_weaklistoffset != 0)) {
+        GC_REGISTER_FINALIZER(op, _Py_Dealloc_finalizer, NULL, NULL, NULL);
     }
     return op;
 }

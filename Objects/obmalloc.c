@@ -127,10 +127,10 @@ _PyMem_RawRealloc(void *ctx, void *ptr, size_t size)
     if (!GC_is_heap_ptr(ptr)) {
         abort();
     }
-    GC_REGISTER_FINALIZER_IGNORE_SELF(ptr, NULL, NULL, &fn, NULL);
+    GC_REGISTER_FINALIZER(ptr, NULL, NULL, &fn, NULL);
     ptr = GC_REALLOC(ptr, size);
     if (fn != NULL) {
-        GC_REGISTER_FINALIZER_IGNORE_SELF(ptr, fn, NULL, NULL, NULL);
+        GC_REGISTER_FINALIZER(ptr, fn, NULL, NULL, NULL);
     }
     return ptr;
 }
@@ -143,7 +143,7 @@ _PyMem_RawFree(void *ctx, void *ptr)
     if (!GC_is_heap_ptr(ptr)) {
         abort();
     }
-    GC_REGISTER_FINALIZER_IGNORE_SELF(ptr, NULL, NULL, NULL, NULL);
+    GC_REGISTER_FINALIZER(ptr, NULL, NULL, NULL, NULL);
 //    GC_FREE(ptr);
 }
 

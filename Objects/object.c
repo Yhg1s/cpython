@@ -2191,13 +2191,20 @@ void
 _GC_Py_Dealloc(PyObject *op)
 {
     PyGILState_STATE state = PyGILState_Ensure();
-    destructor dealloc = Py_TYPE(op)->tp_dealloc;
+    destructor delfunc = Py_TYPE(op)->tp_del;
 #ifdef Py_TRACE_REFS
     _Py_ForgetReference(op);
 #else
     _Py_INC_TPFREES(op);
 #endif
-    (*dealloc)(op);
+    if (Py_TYPE(op)->tp_weaklistoffset != 0) {
+        PyObject_ClearWeakRefs(op);
+    }
+    if (delfunc != NULL) {
+        (*delfunc)(op);
+    } else {
+        PyObject_CallFinalizer(op);
+    }
     PyGILState_Release(state);
 }
 
