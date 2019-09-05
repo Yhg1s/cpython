@@ -91,6 +91,9 @@ class BaseEventTests(test_utils.TestCase):
         self.assertIsNone(
             base_events._ipaddr_info('1.2.3.4', 1, UNSPEC, 0, 0))
 
+        if not support.IPV6_ENABLED:
+            return
+
         # IPv4 address with family IPv6.
         self.assertIsNone(
             base_events._ipaddr_info('1.2.3.4', 1, INET6, STREAM, TCP))
@@ -476,7 +479,7 @@ class BaseEventLoopTests(test_utils.TestCase):
             other_loop.run_until_complete, task)
 
     def test_run_until_complete_loop_orphan_future_close_loop(self):
-        class ShowStopper(BaseException):
+        class ShowStopper(SystemExit):
             pass
 
         async def foo(delay):
@@ -487,10 +490,8 @@ class BaseEventLoopTests(test_utils.TestCase):
 
         self.loop._process_events = mock.Mock()
         self.loop.call_soon(throw)
-        try:
+        with self.assertRaises(ShowStopper):
             self.loop.run_until_complete(foo(0.1))
-        except ShowStopper:
-            pass
 
         # This call fails if run_until_complete does not clean up
         # done-callback for the previous future.
@@ -1151,11 +1152,12 @@ class BaseEventLoopWithSelectorTests(test_utils.TestCase):
             srv.close()
             self.loop.run_until_complete(srv.wait_closed())
 
-    @unittest.skipUnless(hasattr(socket, 'AF_INET6'), 'no IPv6 support')
+    @unittest.skipUnless(support.IPV6_ENABLED, 'no IPv6 support')
     def test_create_server_ipv6(self):
         async def main():
-            srv = await asyncio.start_server(
-                lambda: None, '::1', 0, loop=self.loop)
+            with self.assertWarns(DeprecationWarning):
+                srv = await asyncio.start_server(
+                    lambda: None, '::1', 0, loop=self.loop)
             try:
                 self.assertGreater(len(srv.sockets), 0)
             finally:
@@ -1282,6 +1284,9 @@ class BaseEventLoopWithSelectorTests(test_utils.TestCase):
             t.close()
             test_utils.run_briefly(self.loop)  # allow transport to close
 
+        if not support.IPV6_ENABLED:
+            return
+
         sock.family = socket.AF_INET6
         coro = self.loop.create_connection(asyncio.Protocol, '::1', 80)
         t, p = self.loop.run_until_complete(coro)
@@ -1292,6 +1297,31 @@ class BaseEventLoopWithSelectorTests(test_utils.TestCase):
             host, port = address[:2]
             self.assertRegex(host, r'::(0\.)*1')
             self.assertEqual(port, 80)
+            _, kwargs = m_socket.socket.call_args
+            self.assertEqual(kwargs['family'], m_socket.AF_INET6)
+            self.assertEqual(kwargs['type'], m_socket.SOCK_STREAM)
+        finally:
+            t.close()
+            test_utils.run_briefly(self.loop)  # allow transport to close
+
+    @unittest.skipUnless(support.IPV6_ENABLED, 'no IPv6 support')
+    @unittest.skipIf(sys.platform.startswith('aix'),
+                    "bpo-25545: IPv6 scope id and getaddrinfo() behave differently on AIX")
+    @patch_socket
+    def test_create_connection_ipv6_scope(self, m_socket):
+        m_socket.getaddrinfo = socket.getaddrinfo
+        sock = m_socket.socket.return_value
+        sock.family = socket.AF_INET6
+
+        self.loop._add_reader = mock.Mock()
+        self.loop._add_reader._is_coroutine = False
+        self.loop._add_writer = mock.Mock()
+        self.loop._add_writer._is_coroutine = False
+
+        coro = self.loop.create_connection(asyncio.Protocol, 'fe80::1%1', 80)
+        t, p = self.loop.run_until_complete(coro)
+        try:
+            sock.connect.assert_called_with(('fe80::1', 80, 0, 1))
             _, kwargs = m_socket.socket.call_args
             self.assertEqual(kwargs['family'], m_socket.AF_INET6)
             self.assertEqual(kwargs['type'], m_socket.SOCK_STREAM)

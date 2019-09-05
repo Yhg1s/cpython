@@ -2,6 +2,7 @@
 /* Generic object operations; and implementation of None */
 
 #include "Python.h"
+#include "pycore_initconfig.h"
 #include "pycore_object.h"
 #include "pycore_pystate.h"
 #include "pycore_context.h"
@@ -123,7 +124,7 @@ void
 _Py_dump_counts(FILE* f)
 {
     PyInterpreterState *interp = _PyInterpreterState_Get();
-    if (!interp->core_config.show_alloc_count) {
+    if (!interp->config.show_alloc_count) {
         return;
     }
 
@@ -251,13 +252,7 @@ PyObject_Init(PyObject *op, PyTypeObject *tp)
 {
     if (op == NULL)
         return PyErr_NoMemory();
-    /* Any changes should be reflected in PyObject_INIT (objimpl.h) */
-    Py_TYPE(op) = tp;
-    if (PyType_GetFlags(tp) & Py_TPFLAGS_HEAPTYPE) {
-        Py_INCREF(tp);
-    }
-    _Py_NewReference(op);
-    return op;
+    return PyObject_INIT(op, tp);
 }
 
 PyVarObject *
@@ -297,10 +292,7 @@ PyObject_CallFinalizer(PyObject *self)
 {
     PyTypeObject *tp = Py_TYPE(self);
 
-    /* The former could happen on heaptypes created from the C API, e.g.
-       PyType_FromSpec(). */
-    if (!PyType_HasFeature(tp, Py_TPFLAGS_HAVE_FINALIZE) ||
-        tp->tp_finalize == NULL)
+    if (tp->tp_finalize == NULL)
         return;
     /* tp_finalize should only be called once. */
     if (PyType_IS_GC(tp) && _PyGC_FINALIZED(self))
@@ -318,10 +310,10 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
     Py_ssize_t refcnt;
 
     /* Temporarily resurrect the object. */
-    if (self->ob_refcnt != 0) {
+/*    if (self->ob_refcnt != 0) {
         Py_FatalError("PyObject_CallFinalizerFromDealloc called on "
                       "object with a non-zero refcount");
-    }
+    } */
     self->ob_refcnt = 1;
 
     PyObject_CallFinalizer(self);
@@ -668,7 +660,7 @@ PyObject_Bytes(PyObject *v)
 /* For Python 3.0.1 and later, the old three-way comparison has been
    completely removed in favour of rich comparisons.  PyObject_Compare() and
    PyObject_Cmp() are gone, and the builtin cmp function no longer exists.
-   The old tp_compare slot has been renamed to tp_reserved, and should no
+   The old tp_compare slot has been renamed to tp_as_async, and should no
    longer be used.  Use tp_richcompare instead.
 
    See (*) below for practical amendments.
@@ -1154,8 +1146,7 @@ _PyObject_GetMethod(PyObject *obj, PyObject *name, PyObject **method)
     descr = _PyType_Lookup(tp, name);
     if (descr != NULL) {
         Py_INCREF(descr);
-        if (PyFunction_Check(descr) ||
-                (Py_TYPE(descr) == &PyMethodDescr_Type)) {
+        if (PyType_HasFeature(Py_TYPE(descr), Py_TPFLAGS_METHOD_DESCRIPTOR)) {
             meth_found = 1;
         } else {
             f = descr->ob_type->tp_descr_get;
@@ -1364,6 +1355,14 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
             goto done;
         }
     }
+
+    /* XXX [Steve Dower] These are really noisy - worth it? */
+    /*if (PyType_Check(obj) || PyModule_Check(obj)) {
+        if (value && PySys_Audit("object.__setattr__", "OOO", obj, name, value) < 0)
+            return -1;
+        if (!value && PySys_Audit("object.__delattr__", "OO", obj, name) < 0)
+            return -1;
+    }*/
 
     if (dict == NULL) {
         dictptr = _PyObject_GetDictPtr(obj);
@@ -1633,10 +1632,10 @@ PyTypeObject _PyNone_Type = {
     0,
     0,
     none_dealloc,       /*tp_dealloc*/ /*never called*/
-    0,                  /*tp_print*/
+    0,                  /*tp_vectorcall_offset*/
     0,                  /*tp_getattr*/
     0,                  /*tp_setattr*/
-    0,                  /*tp_reserved*/
+    0,                  /*tp_as_async*/
     none_repr,          /*tp_repr*/
     &none_as_number,    /*tp_as_number*/
     0,                  /*tp_as_sequence*/
@@ -1718,10 +1717,10 @@ PyTypeObject _PyNotImplemented_Type = {
     0,
     0,
     notimplemented_dealloc,       /*tp_dealloc*/ /*never called*/
-    0,                  /*tp_print*/
+    0,                  /*tp_vectorcall_offset*/
     0,                  /*tp_getattr*/
     0,                  /*tp_setattr*/
-    0,                  /*tp_reserved*/
+    0,                  /*tp_as_async*/
     NotImplemented_repr, /*tp_repr*/
     0,                  /*tp_as_number*/
     0,                  /*tp_as_sequence*/
@@ -1758,13 +1757,13 @@ PyObject _Py_NotImplementedStruct = {
     1, &_PyNotImplemented_Type
 };
 
-_PyInitError
+PyStatus
 _PyTypes_Init(void)
 {
 #define INIT_TYPE(TYPE, NAME) \
     do { \
         if (PyType_Ready(TYPE) < 0) { \
-            return _Py_INIT_ERR("Can't initialize " NAME " type"); \
+            return _PyStatus_ERR("Can't initialize " NAME " type"); \
         } \
     } while (0)
 
@@ -1830,10 +1829,11 @@ _PyTypes_Init(void)
     INIT_TYPE(&PyMethodDescr_Type, "method descr");
     INIT_TYPE(&PyCallIter_Type, "call iter");
     INIT_TYPE(&PySeqIter_Type, "sequence iterator");
+    INIT_TYPE(&PyPickleBuffer_Type, "pickle.PickleBuffer");
     INIT_TYPE(&PyCoro_Type, "coroutine");
     INIT_TYPE(&_PyCoroWrapper_Type, "coroutine wrapper");
     INIT_TYPE(&_PyInterpreterID_Type, "interpreter ID");
-    return _Py_INIT_OK();
+    return _PyStatus_OK();
 
 #undef INIT_TYPE
 }
@@ -2193,18 +2193,44 @@ _PyObject_AssertFailed(PyObject *obj, const char *expr, const char *msg,
 }
 
 
-#undef _Py_Dealloc
-
 void
-_Py_Dealloc(PyObject *op)
+_GC_Py_Dealloc(PyObject *op)
 {
-    destructor dealloc = Py_TYPE(op)->tp_dealloc;
+    PyGILState_STATE state = PyGILState_Ensure();
+    destructor delfunc = Py_TYPE(op)->tp_del;
 #ifdef Py_TRACE_REFS
     _Py_ForgetReference(op);
 #else
     _Py_INC_TPFREES(op);
 #endif
-    (*dealloc)(op);
+    if (Py_TYPE(op)->tp_weaklistoffset != 0) {
+        PyObject_ClearWeakRefs(op);
+    }
+    if (delfunc != NULL) {
+        (*delfunc)(op);
+    } else {
+        PyObject_CallFinalizer(op);
+    }
+    PyGILState_Release(state);
+}
+
+void
+_Py_Dealloc_GC_finalizer(void *_op, void *unused)
+{
+    PyObject *op = _Py_FROM_GC(_op);
+    assert(PyObject_IS_GC(op));
+    _Py_Dealloc_finalizer((void *)op, (void *)_op);
+}
+
+void
+_Py_Dealloc_finalizer(void *_op, void *is_gc)
+{
+    PyObject *op = (PyObject *)_op;
+    assert(is_gc == NULL ? !PyObject_IS_GC(op) : PyObject_IS_GC(op));
+    if (op->ob_refcnt != 0) {
+        // fprintf(stderr, "object %p refcount leak (%ld)\n", op, op->ob_refcnt);
+    }
+    _GC_Py_Dealloc(op);
 }
 
 #ifdef __cplusplus

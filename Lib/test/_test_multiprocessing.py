@@ -269,6 +269,64 @@ class _TestProcess(BaseTestCase):
             q.put(bytes(current.authkey))
             q.put(current.pid)
 
+    def test_parent_process_attributes(self):
+        if self.TYPE == "threads":
+            self.skipTest('test not appropriate for {}'.format(self.TYPE))
+
+        self.assertIsNone(self.parent_process())
+
+        rconn, wconn = self.Pipe(duplex=False)
+        p = self.Process(target=self._test_send_parent_process, args=(wconn,))
+        p.start()
+        p.join()
+        parent_pid, parent_name = rconn.recv()
+        self.assertEqual(parent_pid, self.current_process().pid)
+        self.assertEqual(parent_pid, os.getpid())
+        self.assertEqual(parent_name, self.current_process().name)
+
+    @classmethod
+    def _test_send_parent_process(cls, wconn):
+        from multiprocessing.process import parent_process
+        wconn.send([parent_process().pid, parent_process().name])
+
+    def test_parent_process(self):
+        if self.TYPE == "threads":
+            self.skipTest('test not appropriate for {}'.format(self.TYPE))
+
+        # Launch a child process. Make it launch a grandchild process. Kill the
+        # child process and make sure that the grandchild notices the death of
+        # its parent (a.k.a the child process).
+        rconn, wconn = self.Pipe(duplex=False)
+        p = self.Process(
+            target=self._test_create_grandchild_process, args=(wconn, ))
+        p.start()
+
+        if not rconn.poll(timeout=60):
+            raise AssertionError("Could not communicate with child process")
+        parent_process_status = rconn.recv()
+        self.assertEqual(parent_process_status, "alive")
+
+        p.terminate()
+        p.join()
+
+        if not rconn.poll(timeout=60):
+            raise AssertionError("Could not communicate with child process")
+        parent_process_status = rconn.recv()
+        self.assertEqual(parent_process_status, "not alive")
+
+    @classmethod
+    def _test_create_grandchild_process(cls, wconn):
+        p = cls.Process(target=cls._test_report_parent_status, args=(wconn, ))
+        p.start()
+        time.sleep(300)
+
+    @classmethod
+    def _test_report_parent_status(cls, wconn):
+        from multiprocessing.process import parent_process
+        wconn.send("alive" if parent_process().is_alive() else "not alive")
+        parent_process().join(timeout=5)
+        wconn.send("alive" if parent_process().is_alive() else "not alive")
+
     def test_process(self):
         q = self.Queue(1)
         e = self.Event()
@@ -3932,7 +3990,7 @@ class _TestSharedMemory(BaseTestCase):
 
             # Create a shared_memory segment, and send the segment name
             sm = shared_memory.SharedMemory(create=True, size=10)
-            sys.stdout.write(sm._name + '\\n')
+            sys.stdout.write(sm.name + '\\n')
             sys.stdout.flush()
             time.sleep(100)
         '''
@@ -3945,11 +4003,19 @@ class _TestSharedMemory(BaseTestCase):
             # segment should not leak the given memory segment.
             p.terminate()
             p.wait()
-            time.sleep(1.0)  # wait for the OS to collect the segment
 
-            # The shared memory file was deleted.
-            with self.assertRaises(FileNotFoundError):
-                smm = shared_memory.SharedMemory(name, create=False)
+            deadline = time.monotonic() + 60
+            t = 0.1
+            while time.monotonic() < deadline:
+                time.sleep(t)
+                t = min(t*2, 5)
+                try:
+                    smm = shared_memory.SharedMemory(name, create=False)
+                except FileNotFoundError:
+                    break
+            else:
+                raise AssertionError("A SharedMemory segment was leaked after"
+                                     " a process was abruptly terminated.")
 
             if os.name == 'posix':
                 # A warning was emitted by the subprocess' own
@@ -4944,12 +5010,21 @@ class TestResourceTracker(unittest.TestCase):
                 _resource_unlink(name1, rtype)
                 p.terminate()
                 p.wait()
-                time.sleep(2.0)
-                with self.assertRaises(OSError) as ctx:
-                    _resource_unlink(name2, rtype)
-                # docs say it should be ENOENT, but OSX seems to give EINVAL
-                self.assertIn(
-                    ctx.exception.errno, (errno.ENOENT, errno.EINVAL))
+
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    time.sleep(.5)
+                    try:
+                        _resource_unlink(name2, rtype)
+                    except OSError as e:
+                        # docs say it should be ENOENT, but OSX seems to give
+                        # EINVAL
+                        self.assertIn(e.errno, (errno.ENOENT, errno.EINVAL))
+                        break
+                else:
+                    raise AssertionError(
+                        f"A {rtype} resource was leaked after a process was "
+                        f"abruptly terminated.")
                 err = p.stderr.read().decode('utf-8')
                 p.stderr.close()
                 expected = ('resource_tracker: There appear to be 2 leaked {} '
@@ -5390,6 +5465,7 @@ class ProcessesMixin(BaseMixin):
     Process = multiprocessing.Process
     connection = multiprocessing.connection
     current_process = staticmethod(multiprocessing.current_process)
+    parent_process = staticmethod(multiprocessing.parent_process)
     active_children = staticmethod(multiprocessing.active_children)
     Pool = staticmethod(multiprocessing.Pool)
     Pipe = staticmethod(multiprocessing.Pipe)
@@ -5574,7 +5650,16 @@ def install_tests_in_module_dict(remote_globs, start_method):
         # Sleep 500 ms to give time to child processes to complete.
         if need_sleep:
             time.sleep(0.5)
+
         multiprocessing.process._cleanup()
+
+        # Stop the ForkServer process if it's running
+        from multiprocessing import forkserver
+        forkserver._forkserver._stop()
+
+        # bpo-37421: Explicitly call _run_finalizers() to remove immediately
+        # temporary directories created by multiprocessing.util.get_temp_dir().
+        multiprocessing.util._run_finalizers()
         test.support.gc_collect()
 
     remote_globs['setUpModule'] = setUpModule

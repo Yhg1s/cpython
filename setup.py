@@ -125,19 +125,57 @@ def sysroot_paths(make_vars, subdirs):
                 break
     return dirs
 
+MACOS_SDK_ROOT = None
 
 def macosx_sdk_root():
+    """Return the directory of the current macOS SDK.
+
+    If no SDK was explicitly configured, call the compiler to find which
+    include files paths are being searched by default.  Use '/' if the
+    compiler is searching /usr/include (meaning system header files are
+    installed) or use the root of an SDK if that is being searched.
+    (The SDK may be supplied via Xcode or via the Command Line Tools).
+    The SDK paths used by Apple-supplied tool chains depend on the
+    setting of various variables; see the xcrun man page for more info.
     """
-    Return the directory of the current OSX SDK,
-    or '/' if no SDK was specified.
-    """
+    global MACOS_SDK_ROOT
+
+    # If already called, return cached result.
+    if MACOS_SDK_ROOT:
+        return MACOS_SDK_ROOT
+
     cflags = sysconfig.get_config_var('CFLAGS')
     m = re.search(r'-isysroot\s+(\S+)', cflags)
-    if m is None:
-        sysroot = '/'
+    if m is not None:
+        MACOS_SDK_ROOT = m.group(1)
     else:
-        sysroot = m.group(1)
-    return sysroot
+        MACOS_SDK_ROOT = '/'
+        cc = sysconfig.get_config_var('CC')
+        tmpfile = '/tmp/setup_sdk_root.%d' % os.getpid()
+        try:
+            os.unlink(tmpfile)
+        except:
+            pass
+        ret = os.system('%s -E -v - </dev/null 2>%s 1>/dev/null' % (cc, tmpfile))
+        in_incdirs = False
+        try:
+            if ret >> 8 == 0:
+                with open(tmpfile) as fp:
+                    for line in fp.readlines():
+                        if line.startswith("#include <...>"):
+                            in_incdirs = True
+                        elif line.startswith("End of search list"):
+                            in_incdirs = False
+                        elif in_incdirs:
+                            line = line.strip()
+                            if line == '/usr/include':
+                                MACOS_SDK_ROOT = '/'
+                            elif line.endswith(".sdk/usr/include"):
+                                MACOS_SDK_ROOT = line[:-12]
+        finally:
+            os.unlink(tmpfile)
+
+    return MACOS_SDK_ROOT
 
 
 def is_macosx_sdk_path(path):
@@ -1310,7 +1348,7 @@ class PyBuildExt(build_ext):
                              ]
         if CROSS_COMPILING:
             sqlite_inc_paths = []
-        MIN_SQLITE_VERSION_NUMBER = (3, 3, 9)
+        MIN_SQLITE_VERSION_NUMBER = (3, 7, 2)
         MIN_SQLITE_VERSION = ".".join([str(x)
                                     for x in MIN_SQLITE_VERSION_NUMBER])
 
@@ -1561,9 +1599,9 @@ class PyBuildExt(build_ext):
 
             cc = sysconfig.get_config_var('CC').split()[0]
             ret = os.system(
-                      '"%s" -Werror -Wimplicit-fallthrough -E -xc /dev/null >/dev/null 2>&1' % cc)
+                      '"%s" -Werror -Wno-unreachable-code -E -xc /dev/null >/dev/null 2>&1' % cc)
             if ret >> 8 == 0:
-                extra_compile_args.append('-Wno-implicit-fallthrough')
+                extra_compile_args.append('-Wno-unreachable-code')
 
         self.add(Extension('pyexpat',
                            define_macros=define_macros,
@@ -2178,11 +2216,13 @@ class PyBuildExt(build_ext):
             ssl_incs.extend(krb5_h)
 
         if config_vars.get("HAVE_X509_VERIFY_PARAM_SET1_HOST"):
-            self.add(Extension('_ssl', ['_ssl.c'],
-                               include_dirs=openssl_includes,
-                               library_dirs=openssl_libdirs,
-                               libraries=openssl_libs,
-                               depends=['socketmodule.h']))
+            self.add(Extension(
+                '_ssl', ['_ssl.c'],
+                include_dirs=openssl_includes,
+                library_dirs=openssl_libdirs,
+                libraries=openssl_libs,
+                depends=['socketmodule.h', '_ssl/debughelpers.c'])
+            )
         else:
             self.missing.append('_ssl')
 

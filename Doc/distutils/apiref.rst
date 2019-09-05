@@ -290,7 +290,7 @@ the full reference.
    .. versionchanged:: 3.8
 
       On Unix, C extensions are no longer linked to libpython except on
-      Android.
+      Android and Cygwin.
 
 
 .. class:: Distribution
@@ -1862,6 +1862,9 @@ Subclasses of :class:`Command` must define the following methods.
 
 .. module:: distutils.command.bdist_wininst
    :synopsis: Build a Windows installer
+
+.. deprecated:: 3.8
+   Use bdist_wheel (wheel packages) instead.
 
 
 .. % todo

@@ -793,7 +793,6 @@ EXPORTS
   _Py_BuildValue_SizeT=python38._Py_BuildValue_SizeT
   _Py_CheckRecursionLimit=python38._Py_CheckRecursionLimit DATA
   _Py_CheckRecursiveCall=python38._Py_CheckRecursiveCall
-  _Py_Dealloc=python38._Py_Dealloc
   _Py_EllipsisObject=python38._Py_EllipsisObject DATA
   _Py_FalseStruct=python38._Py_FalseStruct DATA
   _Py_NoneStruct=python38._Py_NoneStruct DATA

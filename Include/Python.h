@@ -60,6 +60,14 @@
  */
 #include <assert.h>
 
+/* libgc doesn't appear to have a config.h for these defines, so assume
+ * GC_THREADS support is enabled.
+ */
+#define GC_THREADS 1
+/* #define GC_DEBUG 1 */
+/* Include gc.h for its intercepts of thread functions. */
+#include <gc/gc.h>
+
 #include "pyport.h"
 #include "pymacro.h"
 
@@ -124,11 +132,12 @@
 #include "weakrefobject.h"
 #include "structseq.h"
 #include "namespaceobject.h"
+#include "picklebufobject.h"
 
 #include "codecs.h"
 #include "pyerrors.h"
 
-#include "cpython/coreconfig.h"
+#include "cpython/initconfig.h"
 #include "pystate.h"
 #include "context.h"
 
