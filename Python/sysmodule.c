@@ -201,16 +201,12 @@ PySys_Audit(const char *event, const char *argFormat, ...)
         ts->tracing++;
         ts->use_tracing = 0;
         while ((hook = PyIter_Next(hooks)) != NULL) {
+            _Py_IDENTIFIER(__cantrace__);
             PyObject *o;
-            int canTrace = -1;
-            o = PyObject_GetAttrString(hook, "__cantrace__");
+            int canTrace = _PyObject_LookupAttrId(hook, &PyId___cantrace__, &o);
             if (o) {
                 canTrace = PyObject_IsTrue(o);
                 Py_DECREF(o);
-            } else if (PyErr_Occurred() &&
-                       PyErr_ExceptionMatches(PyExc_AttributeError)) {
-                PyErr_Clear();
-                canTrace = 0;
             }
             if (canTrace < 0) {
                 break;
@@ -538,7 +534,10 @@ sys_displayhook_unencodable(PyObject *outf, PyObject *o)
     if (encoded == NULL)
         goto error;
 
-    buffer = _PyObject_GetAttrId(outf, &PyId_buffer);
+    if (_PyObject_LookupAttrId(outf, &PyId_buffer, &buffer) < 0) {
+        Py_DECREF(encoded);
+        goto error;
+    }
     if (buffer) {
         result = _PyObject_CallMethodIdObjArgs(buffer, &PyId_write, encoded, NULL);
         Py_DECREF(buffer);
@@ -548,7 +547,6 @@ sys_displayhook_unencodable(PyObject *outf, PyObject *o)
         Py_DECREF(result);
     }
     else {
-        PyErr_Clear();
         escaped_str = PyUnicode_FromEncodedObject(encoded,
                                                   stdout_encoding_str,
                                                   "strict");
@@ -2071,36 +2069,42 @@ _clear_preinit_entries(_Py_PreInitEntry *optionlist)
     PyMem_SetAllocator(PYMEM_DOMAIN_RAW, &old_alloc);
 }
 
-static void
-_clear_all_preinit_options(void)
+
+PyStatus
+_PySys_ReadPreinitWarnOptions(PyConfig *config)
 {
+    PyStatus status;
+    _Py_PreInitEntry entry;
+
+    for (entry = _preinit_warnoptions; entry != NULL; entry = entry->next) {
+        status = PyWideStringList_Append(&config->warnoptions, entry->value);
+        if (_PyStatus_EXCEPTION(status)) {
+            return status;
+        }
+    }
+
     _clear_preinit_entries(&_preinit_warnoptions);
-    _clear_preinit_entries(&_preinit_xoptions);
+    return _PyStatus_OK();
 }
 
-static int
-_PySys_ReadPreInitOptions(void)
+
+PyStatus
+_PySys_ReadPreinitXOptions(PyConfig *config)
 {
-    /* Rerun the add commands with the actual sys module available */
-    PyThreadState *tstate = _PyThreadState_GET();
-    if (tstate == NULL) {
-        /* Still don't have a thread state, so something is wrong! */
-        return -1;
-    }
-    _Py_PreInitEntry entry = _preinit_warnoptions;
-    while (entry != NULL) {
-        PySys_AddWarnOption(entry->value);
-        entry = entry->next;
-    }
-    entry = _preinit_xoptions;
-    while (entry != NULL) {
-        PySys_AddXOption(entry->value);
-        entry = entry->next;
+    PyStatus status;
+    _Py_PreInitEntry entry;
+
+    for (entry = _preinit_xoptions; entry != NULL; entry = entry->next) {
+        status = PyWideStringList_Append(&config->xoptions, entry->value);
+        if (_PyStatus_EXCEPTION(status)) {
+            return status;
+        }
     }
 
-    _clear_all_preinit_options();
-    return 0;
+    _clear_preinit_entries(&_preinit_xoptions);
+    return _PyStatus_OK();
 }
+
 
 static PyObject *
 get_warnoptions(void)
@@ -2265,9 +2269,7 @@ PySys_AddXOption(const wchar_t *s)
     }
     if (_PySys_AddXOptionWithError(s) < 0) {
         /* No return value, therefore clear error state if possible */
-        if (_PyThreadState_UncheckedGet()) {
-            PyErr_Clear();
-        }
+        PyErr_Clear();
     }
 }
 
@@ -2926,13 +2928,9 @@ _PySys_InitMain(_PyRuntimeState *runtime, PyInterpreterState *interp)
     if (get_xoptions() == NULL)
         return -1;
 
-    /* Transfer any sys.warnoptions and sys._xoptions set directly
-     * by an embedding application from the linked list to the module. */
-    if (_PySys_ReadPreInitOptions() != 0)
-        return -1;
-
     if (PyErr_Occurred())
         return -1;
+
     return 0;
 
 err_occurred:
@@ -3080,9 +3078,10 @@ make_sys_argv(int argc, wchar_t * const * argv)
 void
 PySys_SetArgvEx(int argc, wchar_t **argv, int updatepath)
 {
+    wchar_t* empty_argv[1] = {L""};
+
     if (argc < 1 || argv == NULL) {
         /* Ensure at least one (empty) argument is seen */
-        wchar_t* empty_argv[1] = {L""};
         argv = empty_argv;
         argc = 1;
     }
