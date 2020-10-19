@@ -777,6 +777,38 @@ Corner-cases that used to crash:
     >>> import ä £
     Traceback (most recent call last):
     SyntaxError: invalid character '£' (U+00A3)
+
+Places ? shouldn't be allowed:
+
+    >>> ?: int = 1
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
+    >>> import os as ?
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
+    >>> from os import path as ?
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
+
+    >>> def ?(arg): pass
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
+    >>> class ?(object): pass
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
+    >>> def func(?): pass
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
+    >>> ? += 1
+    Traceback (most recent call last):
+    SyntaxError: update error message
+
 """
 
 import re

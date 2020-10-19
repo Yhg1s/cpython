@@ -191,7 +191,7 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
         actual_ctx = exp->v.Starred.ctx;
         break;
     case Name_kind:
-        if (!validate_name(exp->v.Name.id)) {
+        if (exp->v.Name.id != NULL && !validate_name(exp->v.Name.id)) {
             return 0;
         }
         actual_ctx = exp->v.Name.ctx;

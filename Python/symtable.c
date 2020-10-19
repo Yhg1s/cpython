@@ -1645,6 +1645,10 @@ symtable_visit_expr(struct symtable *st, expr_ty e)
             VISIT(st, expr, e->v.Slice.step)
         break;
     case Name_kind:
+        if (e->v.Name.id == NULL) {
+            /* '?' has no effect on symtable. */
+            break;
+        }
         if (!symtable_add_def(st, e->v.Name.id,
                               e->v.Name.ctx == Load ? USE : DEF_LOCAL))
             VISIT_QUIT(st, 0);

@@ -2153,6 +2153,13 @@ static int
 forbidden_name(struct compiler *c, identifier name, expr_context_ty ctx)
 {
 
+    if (name == NULL) {
+        if (ctx != Store) {
+            compiler_error(c, "can only assign to ?");
+            return 1;
+        }
+        return 0;
+    }
     if (ctx == Store && _PyUnicode_EqualToASCIIString(name, "__debug__")) {
         compiler_error(c, "cannot assign to __debug__");
         return 1;
@@ -3555,12 +3562,20 @@ compiler_nameop(struct compiler *c, identifier name, expr_context_ty ctx)
     PyObject *dict = c->u->u_names;
     PyObject *mangled;
 
-    assert(!_PyUnicode_EqualToASCIIString(name, "None") &&
-           !_PyUnicode_EqualToASCIIString(name, "True") &&
-           !_PyUnicode_EqualToASCIIString(name, "False"));
+    assert(name == NULL || (!_PyUnicode_EqualToASCIIString(name, "None") &&
+                            !_PyUnicode_EqualToASCIIString(name, "True") &&
+                            !_PyUnicode_EqualToASCIIString(name, "False")));
 
     if (forbidden_name(c, name, ctx))
         return 0;
+
+    if (name == NULL) {
+        /* '?' can only be used in assignment. This should have been caught
+         * by forbidden_name. */
+        assert(ctx == Store);
+        ADDOP(c, POP_TOP);
+        return 1;
+    }
 
     mangled = _Py_Mangle(c->u->u_private, name);
     if (!mangled)

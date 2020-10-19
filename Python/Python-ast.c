@@ -1434,7 +1434,7 @@ static int init_types(astmodulestate *state)
         "     | Attribute(expr value, identifier attr, expr_context ctx)\n"
         "     | Subscript(expr value, expr slice, expr_context ctx)\n"
         "     | Starred(expr value, expr_context ctx)\n"
-        "     | Name(identifier id, expr_context ctx)\n"
+        "     | Name(identifier? id, expr_context ctx)\n"
         "     | List(expr* elts, expr_context ctx)\n"
         "     | Tuple(expr* elts, expr_context ctx)\n"
         "     | Slice(expr? lower, expr? upper, expr? step)");
@@ -1550,8 +1550,10 @@ static int init_types(astmodulestate *state)
     if (!state->Starred_type) return 0;
     state->Name_type = make_type(state, "Name", state->expr_type, Name_fields,
                                  2,
-        "Name(identifier id, expr_context ctx)");
+        "Name(identifier? id, expr_context ctx)");
     if (!state->Name_type) return 0;
+    if (PyObject_SetAttr(state->Name_type, state->id, Py_None) == -1)
+        return 0;
     state->List_type = make_type(state, "List", state->expr_type, List_fields,
                                  2,
         "List(expr* elts, expr_context ctx)");
@@ -3140,11 +3142,6 @@ Name(identifier id, expr_context_ty ctx, int lineno, int col_offset, int
      end_lineno, int end_col_offset, PyArena *arena)
 {
     expr_ty p;
-    if (!id) {
-        PyErr_SetString(PyExc_ValueError,
-                        "field 'id' is required for Name");
-        return NULL;
-    }
     if (!ctx) {
         PyErr_SetString(PyExc_ValueError,
                         "field 'ctx' is required for Name");
@@ -8352,9 +8349,9 @@ obj2ast_expr(astmodulestate *state, PyObject* obj, expr_ty* out, PyArena* arena)
         if (_PyObject_LookupAttr(obj, state->id, &tmp) < 0) {
             return 1;
         }
-        if (tmp == NULL) {
-            PyErr_SetString(PyExc_TypeError, "required field \"id\" missing from Name");
-            return 1;
+        if (tmp == NULL || tmp == Py_None) {
+            Py_CLEAR(tmp);
+            id = NULL;
         }
         else {
             int res;

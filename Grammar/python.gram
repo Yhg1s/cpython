@@ -570,7 +570,7 @@ star_target[expr_ty] (memo):
     | a=t_primary '[' b=slices ']' !t_lookahead { _Py_Subscript(a, b, Store, EXTRA) }
     | star_atom
 star_atom[expr_ty]:
-    | a=NAME { _PyPegen_set_expr_context(p, a, Store) }
+    | optional_name
     | '(' a=star_target ')' { _PyPegen_set_expr_context(p, a, Store) }
     | '(' a=[star_targets_seq] ')' { _Py_Tuple(a, Store, EXTRA) }
     | '[' a=[star_targets_seq] ']' { _Py_List(a, Store, EXTRA) }
@@ -611,11 +611,18 @@ t_primary[expr_ty]:
     | a=atom &t_lookahead { a }
 t_lookahead: '(' | '[' | '.'
 t_atom[expr_ty]:
-    | a=NAME { _PyPegen_set_expr_context(p, a, Store) }
+    | optional_name
     | '(' a=target ')' { _PyPegen_set_expr_context(p, a, Store) }
     | '(' b=[targets] ')' { _Py_Tuple(b, Store, EXTRA) }
     | '[' b=[targets] ']' { _Py_List(b, Store, EXTRA) }
-
+optional_name[expr_ty]:
+    | a=NAME { _PyPegen_set_expr_context(p, a, Store) }
+    | '?' {
+        CHECK_VERSION(
+            10,
+            "unused assignment syntax is",
+            _Py_Name(NULL, Store, EXTRA)
+        ) }
 
 # From here on, there are rules for invalid syntax with specialised error messages
 incorrect_arguments:
