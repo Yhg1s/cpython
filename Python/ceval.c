@@ -24,6 +24,7 @@
 #include "pycore_setobject.h"     // _PySet_Update()
 #include "pycore_sliceobject.h"   // _PyBuildSlice_ConsumeRefs
 #include "pycore_sysmodule.h"     // _PySys_Audit()
+#include "pycore_traceback.h"
 #include "pycore_tuple.h"         // _PyTuple_ITEMS()
 #include "pycore_typeobject.h"    // _PySuper_Lookup()
 #include "pycore_uop_ids.h"       // Uops
@@ -1417,6 +1418,15 @@ get_exception_handler(PyCodeObject *code, int index, int *level, int *handler, i
     return 0;
 }
 
+/* Insert a frame into the traceback for (code object, lineno). */
+static void
+traceback_add(PyThreadState *tstate, PyCodeObject *co)
+{
+    _PyTraceback_Add(
+        PyUnicode_AsUTF8(co->co_qualname),
+        PyUnicode_AsUTF8(co->co_filename), 0);
+}
+
 static int
 initialize_locals(PyThreadState *tstate, PyFunctionObject *func,
     PyObject **localsplus, PyObject *const *args,
@@ -1556,6 +1566,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,
                                 "%U() got an unexpected keyword argument '%S'",
                                 func->func_qualname, keyword);
                 }
+                traceback_add(tstate, co);
 
                 goto kw_fail;
             }
@@ -1578,6 +1589,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,
                 _PyErr_Format(tstate, PyExc_TypeError,
                             "%U() got multiple values for argument '%S'",
                           func->func_qualname, keyword);
+                traceback_add(tstate, co);
                 goto kw_fail;
             }
             localsplus[j] = value;
@@ -1588,6 +1600,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,
     if ((argcount > co->co_argcount) && !(co->co_flags & CO_VARARGS)) {
         too_many_positional(tstate, co, argcount, func->func_defaults, localsplus,
                             func->func_qualname);
+        traceback_add(tstate, co);
         goto fail_post_args;
     }
 
@@ -1604,6 +1617,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,
         if (missing) {
             missing_arguments(tstate, co, missing, defcount, localsplus,
                               func->func_qualname);
+            traceback_add(tstate, co);
             goto fail_post_args;
         }
         if (n > m)
@@ -1643,6 +1657,7 @@ initialize_locals(PyThreadState *tstate, PyFunctionObject *func,
         if (missing) {
             missing_arguments(tstate, co, missing, -1, localsplus,
                               func->func_qualname);
+            traceback_add(tstate, co);
             goto fail_post_args;
         }
     }
