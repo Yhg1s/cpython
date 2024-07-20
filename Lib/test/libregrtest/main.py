@@ -65,7 +65,7 @@ class Regrtest:
         self.first_state: str | None = None
 
         # Logger
-        self.logger = Logger(self.results, self.quiet, self.pgo)
+        self.logger = Logger(self.results, ns)
 
         # Actions
         self.want_header: bool = ns.header
