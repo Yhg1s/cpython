@@ -6141,7 +6141,8 @@
             uint8_t expected = LOAD_CONST;
             if (!_Py_atomic_compare_exchange_uint8(
                     &this_instr->op.code, &expected,
-                    _Py_IsImmortal(obj) ? LOAD_CONST_IMMORTAL : LOAD_CONST_MORTAL)) {
+                    (_Py_IsImmortal(obj) || _PyObject_HasDeferredRefcount(obj)) ?
+                    LOAD_CONST_IMMORTAL : LOAD_CONST_MORTAL)) {
                 // We might lose a race with instrumentation, which we don't care about.
                 assert(expected >= MIN_INSTRUMENTED_OPCODE);
             }
@@ -6164,7 +6165,7 @@
             static_assert(0 == 0, "incorrect cache size");
             _PyStackRef value;
             PyObject *obj = GETITEM(FRAME_CO_CONSTS, oparg);
-            assert(_Py_IsImmortal(obj));
+            assert(_Py_IsImmortal(obj) || _PyObject_HasDeferredRefcount(obj));
             value = PyStackRef_FromPyObjectImmortal(obj);
             stack_pointer[0] = value;
             stack_pointer += 1;

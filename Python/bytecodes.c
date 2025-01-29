@@ -299,7 +299,8 @@ dummy_func(
             uint8_t expected = LOAD_CONST;
             if (!_Py_atomic_compare_exchange_uint8(
                     &this_instr->op.code, &expected,
-                    _Py_IsImmortal(obj) ? LOAD_CONST_IMMORTAL : LOAD_CONST_MORTAL)) {
+                    (_Py_IsImmortal(obj) || _PyObject_HasDeferredRefcount(obj)) ?
+                        LOAD_CONST_IMMORTAL : LOAD_CONST_MORTAL)) {
                 // We might lose a race with instrumentation, which we don't care about.
                 assert(expected >= MIN_INSTRUMENTED_OPCODE);
             }
@@ -318,7 +319,7 @@ dummy_func(
 
         inst(LOAD_CONST_IMMORTAL, (-- value)) {
             PyObject *obj = GETITEM(FRAME_CO_CONSTS, oparg);
-            assert(_Py_IsImmortal(obj));
+            assert(_Py_IsImmortal(obj) || _PyObject_HasDeferredRefcount(obj));
             value = PyStackRef_FromPyObjectImmortal(obj);
         }
 

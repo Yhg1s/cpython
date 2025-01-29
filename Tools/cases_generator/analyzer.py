@@ -613,6 +613,7 @@ NON_ESCAPING_FUNCTIONS = (
     "_PyObject_GC_MAY_BE_TRACKED",
     "_PyObject_GC_TRACK",
     "_PyObject_GetManagedDict",
+    "_PyObject_HasDeferredRefcount",
     "_PyObject_InlineValues",
     "_PyObject_ManagedDictPointer",
     "_PyThreadState_HasStackSpace",

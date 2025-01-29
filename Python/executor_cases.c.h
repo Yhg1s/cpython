@@ -226,7 +226,7 @@
             _PyStackRef value;
             oparg = CURRENT_OPARG();
             PyObject *obj = GETITEM(FRAME_CO_CONSTS, oparg);
-            assert(_Py_IsImmortal(obj));
+            assert(_Py_IsImmortal(obj) || _PyObject_HasDeferredRefcount(obj));
             value = PyStackRef_FromPyObjectImmortal(obj);
             stack_pointer[0] = value;
             stack_pointer += 1;
