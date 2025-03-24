@@ -532,7 +532,7 @@ int
 PyException_SetTraceback(PyObject *self, PyObject *tb)
 {
     int res;
-    Py_BEGIN_CRITICAL_SECTION(self);
+    Py_BEGIN_OPTIONAL_CRITICAL_SECTION(self);
     res = BaseException___traceback___set_impl(PyBaseExceptionObject_CAST(self), tb);
     Py_END_CRITICAL_SECTION();
     return res;

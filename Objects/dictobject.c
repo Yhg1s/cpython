@@ -4401,7 +4401,7 @@ PyDict_SetDefaultRef(PyObject *d, PyObject *key, PyObject *default_value,
                      PyObject **result)
 {
     int res;
-    Py_BEGIN_CRITICAL_SECTION(d);
+    Py_BEGIN_OPTIONAL_CRITICAL_SECTION(d);
     res = dict_setdefault_ref_lock_held(d, key, default_value, result, 1);
     Py_END_CRITICAL_SECTION();
     return res;

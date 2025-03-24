@@ -17,7 +17,7 @@ static inline PyObject *
 PyCell_SwapTakeRef(PyCellObject *cell, PyObject *value)
 {
     PyObject *old_value;
-    Py_BEGIN_CRITICAL_SECTION(cell);
+    Py_BEGIN_OPTIONAL_CRITICAL_SECTION(cell);
     old_value = cell->ob_ref;
     cell->ob_ref = value;
     Py_END_CRITICAL_SECTION();

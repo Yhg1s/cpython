@@ -1034,7 +1034,7 @@ set_update_local(PySetObject *so, PyObject *other)
     assert(Py_REFCNT(so) == 1);
     if (PyAnySet_Check(other)) {
         int rv;
-        Py_BEGIN_CRITICAL_SECTION(other);
+        Py_BEGIN_OPTIONAL_CRITICAL_SECTION(other);
         rv = set_merge_lock_held(so, other);
         Py_END_CRITICAL_SECTION();
         return rv;
@@ -2691,7 +2691,7 @@ PySet_Contains(PyObject *anyset, PyObject *key)
     }
 
     int rv;
-    Py_BEGIN_CRITICAL_SECTION(anyset);
+    Py_BEGIN_OPTIONAL_CRITICAL_SECTION(anyset);
     rv = set_contains_key((PySetObject *)anyset, key);
     Py_END_CRITICAL_SECTION();
     return rv;
@@ -2706,7 +2706,7 @@ PySet_Discard(PyObject *set, PyObject *key)
     }
 
     int rv;
-    Py_BEGIN_CRITICAL_SECTION(set);
+    Py_BEGIN_OPTIONAL_CRITICAL_SECTION(set);
     rv = set_discard_key((PySetObject *)set, key);
     Py_END_CRITICAL_SECTION();
     return rv;
@@ -2722,7 +2722,7 @@ PySet_Add(PyObject *anyset, PyObject *key)
     }
 
     int rv;
-    Py_BEGIN_CRITICAL_SECTION(anyset);
+    Py_BEGIN_OPTIONAL_CRITICAL_SECTION(anyset);
     rv = set_add_key((PySetObject *)anyset, key);
     Py_END_CRITICAL_SECTION();
     return rv;

@@ -533,7 +533,7 @@ PyList_Append(PyObject *op, PyObject *newitem)
 {
     if (PyList_Check(op) && (newitem != NULL)) {
         int ret;
-        Py_BEGIN_CRITICAL_SECTION(op);
+        Py_BEGIN_OPTIONAL_CRITICAL_SECTION(op);
         ret = _PyList_AppendTakeRef((PyListObject *)op, Py_NewRef(newitem));
         Py_END_CRITICAL_SECTION();
         return ret;
@@ -1007,7 +1007,7 @@ list_ass_slice(PyListObject *a, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject *v)
         Py_END_CRITICAL_SECTION2();
     }
     else {
-        Py_BEGIN_CRITICAL_SECTION(a);
+        Py_BEGIN_OPTIONAL_CRITICAL_SECTION(a);
         ret = list_ass_slice_lock_held(a, ilow, ihigh, v);
         Py_END_CRITICAL_SECTION();
     }
@@ -1394,7 +1394,7 @@ _list_extend(PyListObject *self, PyObject *iterable)
         Py_END_CRITICAL_SECTION2();
     }
     else if (PyTuple_CheckExact(iterable)) {
-        Py_BEGIN_CRITICAL_SECTION(self);
+        Py_BEGIN_OPTIONAL_CRITICAL_SECTION(self);
         res = list_extend_lock_held(self, iterable);
         Py_END_CRITICAL_SECTION();
     }
@@ -1427,7 +1427,7 @@ _list_extend(PyListObject *self, PyObject *iterable)
         Py_END_CRITICAL_SECTION2();
     }
     else {
-        Py_BEGIN_CRITICAL_SECTION(self);
+        Py_BEGIN_OPTIONAL_CRITICAL_SECTION(self);
         res = list_extend_iter_lock_held(self, iterable);
         Py_END_CRITICAL_SECTION();
     }

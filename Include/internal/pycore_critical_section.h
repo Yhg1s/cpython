@@ -7,6 +7,7 @@
 
 #include "pycore_lock.h"        // PyMutex_LockFast()
 #include "pycore_pystate.h"     // _PyThreadState_GET()
+#include "pycore_object.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -51,6 +52,19 @@ extern "C" {
         }                                                               \
     }
 
+// Specialized version of critical section locking that omits locking if the
+// object is uniquely referenced (refcount of 1 and no shared/deferred
+// references). This is only safe to use if the reference can't escape
+// _within_ the critical section.
+# define Py_BEGIN_OPTIONAL_CRITICAL_SECTION(op)                         \
+    {                                                                   \
+        PyCriticalSection _py_cs;                                       \
+        if (!_PyObject_IsUniquelyReferenced(_PyObject_CAST(op)))        \
+            PyCriticalSection_Begin(&_py_cs, _PyObject_CAST(op));       \
+        else                                                            \
+            _py_cs = (PyCriticalSection){0, 0}
+
+
 // Asserts that the mutex is locked.  The mutex must be held by the
 // top-most critical section otherwise there's the possibility
 // that the mutex would be swalled out in some code paths.
@@ -63,7 +77,7 @@ extern "C" {
 #ifdef Py_DEBUG
 
 # define _Py_CRITICAL_SECTION_ASSERT_OBJECT_LOCKED(op)                           \
-    if (Py_REFCNT(op) != 1) {                                                    \
+    if (!_PyObject_IsUniquelyReferenced(op)) {                                   \
         _Py_CRITICAL_SECTION_ASSERT_MUTEX_LOCKED(&_PyObject_CAST(op)->ob_mutex); \
     }
 
