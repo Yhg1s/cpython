@@ -239,7 +239,7 @@ def generate_tier1_cases(
             out.emit(f"_Py_CODEUNIT* const this_instr = next_instr;\n")
             out.emit(unused_guard)
         if not inst.properties.no_save_ip:
-            out.emit(f"frame->instr_ptr = next_instr;\n")
+            out.emit(f"FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);\n")
 
         out.emit(f"next_instr += {inst.size};\n")
         out.emit(f"INSTRUCTION_STATS({name});\n")

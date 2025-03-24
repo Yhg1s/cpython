@@ -23,7 +23,7 @@
             int opcode = BINARY_OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP);
             PREDICTED_BINARY_OP:;
@@ -88,7 +88,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_ADD_FLOAT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -141,7 +141,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_ADD_INT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -196,7 +196,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_ADD_UNICODE);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -249,7 +249,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_EXTEND);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -313,7 +313,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_INPLACE_ADD_UNICODE);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -401,7 +401,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_MULTIPLY_FLOAT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -454,7 +454,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_MULTIPLY_INT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -509,7 +509,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBSCR_DICT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -566,7 +566,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBSCR_GETITEM);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -651,7 +651,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBSCR_LIST_INT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -725,7 +725,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBSCR_STR_INT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -787,7 +787,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBSCR_TUPLE_INT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -845,7 +845,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBTRACT_FLOAT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -898,7 +898,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(BINARY_OP_SUBTRACT_INT);
             static_assert(INLINE_CACHE_ENTRIES_BINARY_OP == 5, "incorrect cache size");
@@ -951,7 +951,7 @@
             int opcode = BINARY_SLICE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BINARY_SLICE);
             _PyStackRef container;
@@ -1011,7 +1011,7 @@
             int opcode = BUILD_LIST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BUILD_LIST);
             _PyStackRef *values;
@@ -1035,7 +1035,7 @@
             int opcode = BUILD_MAP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BUILD_MAP);
             _PyStackRef *values;
@@ -1087,7 +1087,7 @@
             int opcode = BUILD_SET;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BUILD_SET);
             _PyStackRef *values;
@@ -1145,7 +1145,7 @@
             int opcode = BUILD_SLICE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BUILD_SLICE);
             _PyStackRef *args;
@@ -1180,7 +1180,7 @@
             int opcode = BUILD_STRING;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BUILD_STRING);
             _PyStackRef *pieces;
@@ -1227,7 +1227,7 @@
             int opcode = BUILD_TUPLE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BUILD_TUPLE);
             _PyStackRef *values;
@@ -1249,7 +1249,7 @@
             int opcode = CACHE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CACHE);
             assert(0 && "Executing a cache.");
@@ -1262,7 +1262,7 @@
             int opcode = CALL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL);
             PREDICTED_CALL:;
@@ -1454,7 +1454,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_ALLOC_AND_ENTER_INIT);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -1584,7 +1584,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BOUND_METHOD_EXACT_ARGS);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -1723,7 +1723,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BOUND_METHOD_GENERAL);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -1845,7 +1845,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_CLASS);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -1955,7 +1955,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_FAST);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -2071,7 +2071,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_FAST_WITH_KEYWORDS);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -2188,7 +2188,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_O);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -2283,7 +2283,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CALL_FUNCTION_EX);
             opcode = CALL_FUNCTION_EX;
@@ -2473,7 +2473,7 @@
             int opcode = CALL_INTRINSIC_1;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CALL_INTRINSIC_1);
             _PyStackRef value;
@@ -2503,7 +2503,7 @@
             int opcode = CALL_INTRINSIC_2;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CALL_INTRINSIC_2);
             _PyStackRef value2_st;
@@ -2544,7 +2544,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_ISINSTANCE);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -2611,7 +2611,7 @@
             int opcode = CALL_KW;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_KW);
             PREDICTED_CALL_KW:;
@@ -2807,7 +2807,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_KW_BOUND_METHOD);
             static_assert(INLINE_CACHE_ENTRIES_CALL_KW == 3, "incorrect cache size");
@@ -2940,7 +2940,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_KW_NON_PY);
             opcode = CALL_KW_NON_PY;
@@ -3073,7 +3073,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_KW_PY);
             static_assert(INLINE_CACHE_ENTRIES_CALL_KW == 3, "incorrect cache size");
@@ -3180,7 +3180,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_LEN);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -3247,7 +3247,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_LIST_APPEND);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -3311,7 +3311,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_METHOD_DESCRIPTOR_FAST);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -3433,7 +3433,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_METHOD_DESCRIPTOR_FAST_WITH_KEYWORDS);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -3555,7 +3555,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_METHOD_DESCRIPTOR_NOARGS);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -3658,7 +3658,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_METHOD_DESCRIPTOR_O);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -3772,7 +3772,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_NON_PY_GENERAL);
             opcode = CALL_NON_PY_GENERAL;
@@ -3893,7 +3893,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_PY_EXACT_ARGS);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -4004,7 +4004,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_PY_GENERAL);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -4100,7 +4100,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_STR_1);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -4173,7 +4173,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_TUPLE_1);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -4246,7 +4246,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(CALL_TYPE_1);
             static_assert(INLINE_CACHE_ENTRIES_CALL == 3, "incorrect cache size");
@@ -4288,7 +4288,7 @@
             int opcode = CHECK_EG_MATCH;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CHECK_EG_MATCH);
             _PyStackRef exc_value_st;
@@ -4359,7 +4359,7 @@
             int opcode = CHECK_EXC_MATCH;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CHECK_EXC_MATCH);
             _PyStackRef left;
@@ -4398,7 +4398,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CLEANUP_THROW);
             _PyStackRef sub_iter;
@@ -4455,7 +4455,7 @@
             int opcode = COMPARE_OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(COMPARE_OP);
             PREDICTED_COMPARE_OP:;
@@ -4530,7 +4530,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(COMPARE_OP_FLOAT);
             static_assert(INLINE_CACHE_ENTRIES_COMPARE_OP == 1, "incorrect cache size");
@@ -4582,7 +4582,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(COMPARE_OP_INT);
             static_assert(INLINE_CACHE_ENTRIES_COMPARE_OP == 1, "incorrect cache size");
@@ -4646,7 +4646,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(COMPARE_OP_STR);
             static_assert(INLINE_CACHE_ENTRIES_COMPARE_OP == 1, "incorrect cache size");
@@ -4697,7 +4697,7 @@
             int opcode = CONTAINS_OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(CONTAINS_OP);
             PREDICTED_CONTAINS_OP:;
@@ -4759,7 +4759,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(CONTAINS_OP_DICT);
             static_assert(INLINE_CACHE_ENTRIES_CONTAINS_OP == 1, "incorrect cache size");
@@ -4807,7 +4807,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(CONTAINS_OP_SET);
             static_assert(INLINE_CACHE_ENTRIES_CONTAINS_OP == 1, "incorrect cache size");
@@ -4854,7 +4854,7 @@
             int opcode = CONVERT_VALUE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(CONVERT_VALUE);
             _PyStackRef value;
@@ -4886,7 +4886,7 @@
             int opcode = COPY;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(COPY);
             _PyStackRef bottom;
@@ -4905,7 +4905,7 @@
             int opcode = COPY_FREE_VARS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(COPY_FREE_VARS);
             /* Copy closure variables to free variables */
@@ -4927,7 +4927,7 @@
             int opcode = DELETE_ATTR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DELETE_ATTR);
             _PyStackRef owner;
@@ -4952,7 +4952,7 @@
             int opcode = DELETE_DEREF;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DELETE_DEREF);
             PyObject *cell = PyStackRef_AsPyObjectBorrow(GETLOCAL(oparg));
@@ -4976,7 +4976,7 @@
             int opcode = DELETE_FAST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DELETE_FAST);
             _PyStackRef v = GETLOCAL(oparg);
@@ -5002,7 +5002,7 @@
             int opcode = DELETE_GLOBAL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DELETE_GLOBAL);
             PyObject *name = GETITEM(FRAME_CO_NAMES, oparg);
@@ -5028,7 +5028,7 @@
             int opcode = DELETE_NAME;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DELETE_NAME);
             PyObject *name = GETITEM(FRAME_CO_NAMES, oparg);
@@ -5061,7 +5061,7 @@
             int opcode = DELETE_SUBSCR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DELETE_SUBSCR);
             _PyStackRef container;
@@ -5094,7 +5094,7 @@
             int opcode = DICT_MERGE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DICT_MERGE);
             _PyStackRef callable;
@@ -5133,7 +5133,7 @@
             int opcode = DICT_UPDATE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(DICT_UPDATE);
             _PyStackRef dict;
@@ -5178,7 +5178,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(END_ASYNC_FOR);
             _PyStackRef awaitable_st;
@@ -5243,7 +5243,7 @@
             int opcode = END_SEND;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(END_SEND);
             _PyStackRef receiver;
@@ -5269,7 +5269,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(ENTER_EXECUTOR);
             opcode = ENTER_EXECUTOR;
@@ -5306,7 +5306,7 @@
             int opcode = EXIT_INIT_CHECK;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(EXIT_INIT_CHECK);
             _PyStackRef should_be_none;
@@ -5330,7 +5330,7 @@
             int opcode = EXTENDED_ARG;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(EXTENDED_ARG);
             opcode = EXTENDED_ARG;
@@ -5346,7 +5346,7 @@
             int opcode = FORMAT_SIMPLE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(FORMAT_SIMPLE);
             _PyStackRef value;
@@ -5385,7 +5385,7 @@
             int opcode = FORMAT_WITH_SPEC;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(FORMAT_WITH_SPEC);
             _PyStackRef value;
@@ -5421,7 +5421,7 @@
             int opcode = FOR_ITER;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER);
             PREDICTED_FOR_ITER:;
@@ -5489,7 +5489,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_GEN);
             static_assert(INLINE_CACHE_ENTRIES_FOR_ITER == 1, "incorrect cache size");
@@ -5566,7 +5566,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_LIST);
             static_assert(INLINE_CACHE_ENTRIES_FOR_ITER == 1, "incorrect cache size");
@@ -5673,7 +5673,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_RANGE);
             static_assert(INLINE_CACHE_ENTRIES_FOR_ITER == 1, "incorrect cache size");
@@ -5741,7 +5741,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_TUPLE);
             static_assert(INLINE_CACHE_ENTRIES_FOR_ITER == 1, "incorrect cache size");
@@ -5814,7 +5814,7 @@
             int opcode = GET_AITER;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(GET_AITER);
             _PyStackRef obj;
@@ -5875,7 +5875,7 @@
             int opcode = GET_ANEXT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(GET_ANEXT);
             _PyStackRef aiter;
@@ -5899,7 +5899,7 @@
             int opcode = GET_AWAITABLE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(GET_AWAITABLE);
             _PyStackRef iterable;
@@ -5928,7 +5928,7 @@
             int opcode = GET_ITER;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(GET_ITER);
             _PyStackRef iterable;
@@ -5958,7 +5958,7 @@
             int opcode = GET_LEN;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(GET_LEN);
             _PyStackRef obj;
@@ -5987,7 +5987,7 @@
             int opcode = GET_YIELD_FROM_ITER;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(GET_YIELD_FROM_ITER);
             _PyStackRef iterable;
@@ -6040,7 +6040,7 @@
             int opcode = IMPORT_FROM;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(IMPORT_FROM);
             _PyStackRef from;
@@ -6065,7 +6065,7 @@
             int opcode = IMPORT_NAME;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(IMPORT_NAME);
             _PyStackRef level;
@@ -6106,7 +6106,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(INSTRUMENTED_CALL);
             opcode = INSTRUMENTED_CALL;
@@ -6307,7 +6307,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_CALL_FUNCTION_EX);
             opcode = INSTRUMENTED_CALL_FUNCTION_EX;
@@ -6499,7 +6499,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(INSTRUMENTED_CALL_KW);
             opcode = INSTRUMENTED_CALL_KW;
@@ -6700,7 +6700,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_END_ASYNC_FOR);
             _PyStackRef awaitable_st;
@@ -6784,7 +6784,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_END_SEND);
             _PyStackRef receiver;
@@ -6818,7 +6818,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_FOR_ITER);
             /* Skip 1 cache entry */
@@ -6860,7 +6860,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_INSTRUCTION);
             opcode = INSTRUMENTED_INSTRUCTION;
@@ -6887,7 +6887,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_JUMP_BACKWARD);
             /* Skip 1 cache entry */
@@ -6918,7 +6918,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_JUMP_FORWARD);
             INSTRUMENTED_JUMP(this_instr, next_instr + oparg, PY_MONITORING_EVENT_JUMP);
@@ -6933,7 +6933,7 @@
             _Py_CODEUNIT* const prev_instr = frame->instr_ptr;
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_LINE);
             opcode = INSTRUMENTED_LINE;
@@ -6974,7 +6974,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_LOAD_SUPER_ATTR);
             opcode = INSTRUMENTED_LOAD_SUPER_ATTR;
@@ -7097,7 +7097,7 @@
             _Py_CODEUNIT* const prev_instr = frame->instr_ptr;
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_NOT_TAKEN);
             (void)this_instr; // INSTRUMENTED_JUMP requires this_instr
@@ -7113,7 +7113,7 @@
             _Py_CODEUNIT* const prev_instr = frame->instr_ptr;
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_POP_ITER);
             _PyStackRef iter;
@@ -7134,7 +7134,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_POP_JUMP_IF_FALSE);
             /* Skip 1 cache entry */
@@ -7155,7 +7155,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_POP_JUMP_IF_NONE);
             /* Skip 1 cache entry */
@@ -7180,7 +7180,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_POP_JUMP_IF_NOT_NONE);
             /* Skip 1 cache entry */
@@ -7203,7 +7203,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(INSTRUMENTED_POP_JUMP_IF_TRUE);
             /* Skip 1 cache entry */
@@ -7224,7 +7224,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_RESUME);
             // _LOAD_BYTECODE
@@ -7241,10 +7241,12 @@
                     }
                     ptrdiff_t off = this_instr - _PyFrame_GetBytecode(frame);
                     frame->tlbc_index = ((_PyThreadStateImpl *)tstate)->tlbc_index;
-                    frame->instr_ptr = bytecode + off;
                     // Make sure this_instr gets reset correctley for any uops that
                     // follow
-                    next_instr = frame->instr_ptr;
+                    next_instr = bytecode + off;
+                    _PyFrame_SetStackPointer(frame, stack_pointer);
+                    _Py_atomic_store_ptr_relaxed(&frame->instr_ptr, next_instr);
+                    stack_pointer = _PyFrame_GetStackPointer(frame);
                     DISPATCH();
                 }
                 #endif
@@ -7305,7 +7307,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_RETURN_VALUE);
             _PyStackRef val;
@@ -7356,7 +7358,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INSTRUMENTED_YIELD_VALUE);
             _PyStackRef val;
@@ -7385,7 +7387,7 @@
                 // The compiler treats any exception raised here as a failed close()
                 // or throw() call.
                 assert(frame->owner != FRAME_OWNED_BY_INTERPRETER);
-                frame->instr_ptr++;
+                FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
                 PyGenObject *gen = _PyGen_GetGeneratorFromFrame(frame);
                 assert(FRAME_SUSPENDED_YIELD_FROM == FRAME_SUSPENDED + 1);
                 assert(oparg == 0 || oparg == 1);
@@ -7426,7 +7428,7 @@
             int opcode = INTERPRETER_EXIT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INTERPRETER_EXIT);
             _PyStackRef retval;
@@ -7448,7 +7450,7 @@
             int opcode = IS_OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(IS_OP);
             _PyStackRef left;
@@ -7481,7 +7483,7 @@
             int opcode = JUMP_BACKWARD;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(JUMP_BACKWARD);
             PREDICTED_JUMP_BACKWARD:;
@@ -7532,7 +7534,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(JUMP_BACKWARD_JIT);
             static_assert(1 == 1, "incorrect cache size");
@@ -7603,7 +7605,7 @@
             int opcode = JUMP_BACKWARD_NO_INTERRUPT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(JUMP_BACKWARD_NO_INTERRUPT);
             /* This bytecode is used in the `yield from` or `await` loop.
@@ -7621,7 +7623,7 @@
             int opcode = JUMP_BACKWARD_NO_JIT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(JUMP_BACKWARD_NO_JIT);
             static_assert(1 == 1, "incorrect cache size");
@@ -7657,7 +7659,7 @@
             int opcode = JUMP_FORWARD;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(JUMP_FORWARD);
             JUMPBY(oparg);
@@ -7669,7 +7671,7 @@
             int opcode = LIST_APPEND;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LIST_APPEND);
             _PyStackRef list;
@@ -7691,7 +7693,7 @@
             int opcode = LIST_EXTEND;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LIST_EXTEND);
             _PyStackRef list_st;
@@ -7738,7 +7740,7 @@
             int opcode = LOAD_ATTR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR);
             PREDICTED_LOAD_ATTR:;
@@ -7836,7 +7838,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_CLASS);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -7895,7 +7897,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_CLASS_WITH_METACLASS_CHECK);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -7964,7 +7966,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_GETATTRIBUTE_OVERRIDDEN);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8022,7 +8024,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_INSTANCE_VALUE);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8101,7 +8103,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_METHOD_LAZY_DICT);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8158,7 +8160,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_METHOD_NO_DICT);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8204,7 +8206,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_METHOD_WITH_VALUES);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8272,7 +8274,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_MODULE);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8346,7 +8348,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_NONDESCRIPTOR_NO_DICT);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8393,7 +8395,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_NONDESCRIPTOR_WITH_VALUES);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8461,7 +8463,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_PROPERTY);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8556,7 +8558,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_SLOT);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8626,7 +8628,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 10;
             INSTRUCTION_STATS(LOAD_ATTR_WITH_HINT);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_ATTR == 9, "incorrect cache size");
@@ -8727,7 +8729,7 @@
             int opcode = LOAD_BUILD_CLASS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_BUILD_CLASS);
             _PyStackRef bc;
@@ -8757,7 +8759,7 @@
             int opcode = LOAD_COMMON_CONSTANT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_COMMON_CONSTANT);
             _PyStackRef value;
@@ -8783,7 +8785,7 @@
             int opcode = LOAD_CONST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_CONST);
             PREDICTED_LOAD_CONST:;
@@ -8820,7 +8822,7 @@
             int opcode = LOAD_CONST_IMMORTAL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_CONST_IMMORTAL);
             static_assert(0 == 0, "incorrect cache size");
@@ -8839,7 +8841,7 @@
             int opcode = LOAD_CONST_MORTAL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_CONST_MORTAL);
             static_assert(0 == 0, "incorrect cache size");
@@ -8857,7 +8859,7 @@
             int opcode = LOAD_DEREF;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_DEREF);
             _PyStackRef value;
@@ -8881,7 +8883,7 @@
             int opcode = LOAD_FAST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_FAST);
             _PyStackRef value;
@@ -8898,7 +8900,7 @@
             int opcode = LOAD_FAST_AND_CLEAR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_FAST_AND_CLEAR);
             _PyStackRef value;
@@ -8915,7 +8917,7 @@
             int opcode = LOAD_FAST_CHECK;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_FAST_CHECK);
             _PyStackRef value;
@@ -8941,7 +8943,7 @@
             int opcode = LOAD_FAST_LOAD_FAST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_FAST_LOAD_FAST);
             _PyStackRef value1;
@@ -8962,7 +8964,7 @@
             int opcode = LOAD_FROM_DICT_OR_DEREF;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_FROM_DICT_OR_DEREF);
             _PyStackRef class_dict_st;
@@ -9007,7 +9009,7 @@
             int opcode = LOAD_FROM_DICT_OR_GLOBALS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_FROM_DICT_OR_GLOBALS);
             _PyStackRef mod_or_class_dict;
@@ -9087,7 +9089,7 @@
             int opcode = LOAD_GLOBAL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(LOAD_GLOBAL);
             PREDICTED_LOAD_GLOBAL:;
@@ -9145,7 +9147,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(LOAD_GLOBAL_BUILTIN);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_GLOBAL == 4, "incorrect cache size");
@@ -9225,7 +9227,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(LOAD_GLOBAL_MODULE);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_GLOBAL == 4, "incorrect cache size");
@@ -9290,7 +9292,7 @@
             int opcode = LOAD_LOCALS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_LOCALS);
             _PyStackRef locals;
@@ -9314,7 +9316,7 @@
             int opcode = LOAD_NAME;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_NAME);
             _PyStackRef v;
@@ -9337,7 +9339,7 @@
             int opcode = LOAD_SMALL_INT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_SMALL_INT);
             _PyStackRef value;
@@ -9355,7 +9357,7 @@
             int opcode = LOAD_SPECIAL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(LOAD_SPECIAL);
             _PyStackRef owner;
@@ -9396,7 +9398,7 @@
             int opcode = LOAD_SUPER_ATTR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(LOAD_SUPER_ATTR);
             PREDICTED_LOAD_SUPER_ATTR:;
@@ -9537,7 +9539,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(LOAD_SUPER_ATTR_ATTR);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_SUPER_ATTR == 1, "incorrect cache size");
@@ -9599,7 +9601,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(LOAD_SUPER_ATTR_METHOD);
             static_assert(INLINE_CACHE_ENTRIES_LOAD_SUPER_ATTR == 1, "incorrect cache size");
@@ -9677,7 +9679,7 @@
             int opcode = MAKE_CELL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MAKE_CELL);
             // "initial" is probably NULL but not if it's an arg (or set
@@ -9700,7 +9702,7 @@
             int opcode = MAKE_FUNCTION;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MAKE_FUNCTION);
             _PyStackRef codeobj_st;
@@ -9733,7 +9735,7 @@
             int opcode = MAP_ADD;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MAP_ADD);
             _PyStackRef dict_st;
@@ -9766,7 +9768,7 @@
             int opcode = MATCH_CLASS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MATCH_CLASS);
             _PyStackRef subject;
@@ -9821,7 +9823,7 @@
             int opcode = MATCH_KEYS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MATCH_KEYS);
             _PyStackRef subject;
@@ -9849,7 +9851,7 @@
             int opcode = MATCH_MAPPING;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MATCH_MAPPING);
             _PyStackRef subject;
@@ -9868,7 +9870,7 @@
             int opcode = MATCH_SEQUENCE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(MATCH_SEQUENCE);
             _PyStackRef subject;
@@ -9887,7 +9889,7 @@
             int opcode = NOP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(NOP);
             DISPATCH();
@@ -9898,7 +9900,7 @@
             int opcode = NOT_TAKEN;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(NOT_TAKEN);
             DISPATCH();
@@ -9909,7 +9911,7 @@
             int opcode = POP_EXCEPT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(POP_EXCEPT);
             _PyStackRef exc_value;
@@ -9930,7 +9932,7 @@
             int opcode = POP_ITER;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(POP_ITER);
             _PyStackRef value;
@@ -9950,7 +9952,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(POP_JUMP_IF_FALSE);
             _PyStackRef cond;
@@ -9972,7 +9974,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(POP_JUMP_IF_NONE);
             _PyStackRef value;
@@ -10016,7 +10018,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(POP_JUMP_IF_NOT_NONE);
             _PyStackRef value;
@@ -10060,7 +10062,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(POP_JUMP_IF_TRUE);
             _PyStackRef cond;
@@ -10080,7 +10082,7 @@
             int opcode = POP_TOP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(POP_TOP);
             _PyStackRef value;
@@ -10098,7 +10100,7 @@
             int opcode = PUSH_EXC_INFO;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(PUSH_EXC_INFO);
             _PyStackRef exc;
@@ -10127,7 +10129,7 @@
             int opcode = PUSH_NULL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(PUSH_NULL);
             _PyStackRef res;
@@ -10145,7 +10147,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RAISE_VARARGS);
             _PyStackRef *args;
@@ -10174,7 +10176,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RERAISE);
             _PyStackRef *values;
@@ -10186,7 +10188,8 @@
             if (oparg) {
                 PyObject *lasti = PyStackRef_AsPyObjectBorrow(values[0]);
                 if (PyLong_Check(lasti)) {
-                    frame->instr_ptr = _PyFrame_GetBytecode(frame) + PyLong_AsLong(lasti);
+                    FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr,
+                        _PyFrame_GetBytecode(frame) + PyLong_AsLong(lasti));
                     assert(!_PyErr_Occurred(tstate));
                 }
                 else {
@@ -10213,7 +10216,7 @@
             int opcode = RESERVED;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RESERVED);
             assert(0 && "Executing RESERVED instruction.");
@@ -10226,7 +10229,7 @@
             int opcode = RESUME;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RESUME);
             PREDICTED_RESUME:;
@@ -10246,10 +10249,12 @@
                     }
                     ptrdiff_t off = this_instr - _PyFrame_GetBytecode(frame);
                     frame->tlbc_index = ((_PyThreadStateImpl *)tstate)->tlbc_index;
-                    frame->instr_ptr = bytecode + off;
                     // Make sure this_instr gets reset correctley for any uops that
                     // follow
-                    next_instr = frame->instr_ptr;
+                    next_instr = bytecode + off;
+                    _PyFrame_SetStackPointer(frame, stack_pointer);
+                    _Py_atomic_store_ptr_relaxed(&frame->instr_ptr, next_instr);
+                    stack_pointer = _PyFrame_GetStackPointer(frame);
                     DISPATCH();
                 }
                 #endif
@@ -10304,7 +10309,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RESUME_CHECK);
             static_assert(0 == 0, "incorrect cache size");
@@ -10340,7 +10345,7 @@
             int opcode = RETURN_GENERATOR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RETURN_GENERATOR);
             _PyStackRef res;
@@ -10355,7 +10360,7 @@
             assert(EMPTY());
             _PyFrame_SetStackPointer(frame, stack_pointer);
             _PyInterpreterFrame *gen_frame = &gen->gi_iframe;
-            frame->instr_ptr++;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
             _PyFrame_Copy(frame, gen_frame);
             assert(frame->frame_obj == NULL);
             gen->gi_frame_state = FRAME_CREATED;
@@ -10379,7 +10384,7 @@
             int opcode = RETURN_VALUE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(RETURN_VALUE);
             _PyStackRef retval;
@@ -10412,7 +10417,7 @@
             int opcode = SEND;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(SEND);
             PREDICTED_SEND:;
@@ -10518,7 +10523,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(SEND_GEN);
             static_assert(INLINE_CACHE_ENTRIES_SEND == 1, "incorrect cache size");
@@ -10586,7 +10591,7 @@
             int opcode = SETUP_ANNOTATIONS;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(SETUP_ANNOTATIONS);
             PyObject *ann_dict;
@@ -10633,7 +10638,7 @@
             int opcode = SET_ADD;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(SET_ADD);
             _PyStackRef set;
@@ -10660,7 +10665,7 @@
             int opcode = SET_FUNCTION_ATTRIBUTE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(SET_FUNCTION_ATTRIBUTE);
             _PyStackRef attr_st;
@@ -10688,7 +10693,7 @@
             int opcode = SET_UPDATE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(SET_UPDATE);
             _PyStackRef set;
@@ -10715,7 +10720,7 @@
             int opcode = STORE_ATTR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(STORE_ATTR);
             PREDICTED_STORE_ATTR:;
@@ -10774,7 +10779,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(STORE_ATTR_INSTANCE_VALUE);
             static_assert(INLINE_CACHE_ENTRIES_STORE_ATTR == 4, "incorrect cache size");
@@ -10850,7 +10855,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(STORE_ATTR_SLOT);
             static_assert(INLINE_CACHE_ENTRIES_STORE_ATTR == 4, "incorrect cache size");
@@ -10901,7 +10906,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 5;
             INSTRUCTION_STATS(STORE_ATTR_WITH_HINT);
             static_assert(INLINE_CACHE_ENTRIES_STORE_ATTR == 4, "incorrect cache size");
@@ -10999,7 +11004,7 @@
             int opcode = STORE_DEREF;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_DEREF);
             _PyStackRef v;
@@ -11018,7 +11023,7 @@
             int opcode = STORE_FAST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_FAST);
             _PyStackRef value;
@@ -11042,7 +11047,7 @@
             int opcode = STORE_FAST_LOAD_FAST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_FAST_LOAD_FAST);
             _PyStackRef value1;
@@ -11069,7 +11074,7 @@
             int opcode = STORE_FAST_STORE_FAST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_FAST_STORE_FAST);
             _PyStackRef value2;
@@ -11108,7 +11113,7 @@
             int opcode = STORE_GLOBAL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_GLOBAL);
             _PyStackRef v;
@@ -11133,7 +11138,7 @@
             int opcode = STORE_NAME;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_NAME);
             _PyStackRef v;
@@ -11179,7 +11184,7 @@
             int opcode = STORE_SLICE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(STORE_SLICE);
             _PyStackRef v;
@@ -11243,7 +11248,7 @@
             int opcode = STORE_SUBSCR;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(STORE_SUBSCR);
             PREDICTED_STORE_SUBSCR:;
@@ -11305,7 +11310,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(STORE_SUBSCR_DICT);
             static_assert(INLINE_CACHE_ENTRIES_STORE_SUBSCR == 1, "incorrect cache size");
@@ -11346,7 +11351,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(STORE_SUBSCR_LIST_INT);
             static_assert(INLINE_CACHE_ENTRIES_STORE_SUBSCR == 1, "incorrect cache size");
@@ -11411,7 +11416,7 @@
             int opcode = SWAP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(SWAP);
             _PyStackRef *bottom;
@@ -11430,7 +11435,7 @@
             int opcode = TO_BOOL;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL);
             PREDICTED_TO_BOOL:;
@@ -11484,7 +11489,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL_ALWAYS_TRUE);
             static_assert(INLINE_CACHE_ENTRIES_TO_BOOL == 3, "incorrect cache size");
@@ -11527,7 +11532,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL_BOOL);
             static_assert(INLINE_CACHE_ENTRIES_TO_BOOL == 3, "incorrect cache size");
@@ -11551,7 +11556,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL_INT);
             static_assert(INLINE_CACHE_ENTRIES_TO_BOOL == 3, "incorrect cache size");
@@ -11592,7 +11597,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL_LIST);
             static_assert(INLINE_CACHE_ENTRIES_TO_BOOL == 3, "incorrect cache size");
@@ -11626,7 +11631,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL_NONE);
             static_assert(INLINE_CACHE_ENTRIES_TO_BOOL == 3, "incorrect cache size");
@@ -11654,7 +11659,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL_STR);
             static_assert(INLINE_CACHE_ENTRIES_TO_BOOL == 3, "incorrect cache size");
@@ -11694,7 +11699,7 @@
             int opcode = UNARY_INVERT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(UNARY_INVERT);
             _PyStackRef value;
@@ -11723,7 +11728,7 @@
             int opcode = UNARY_NEGATIVE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(UNARY_NEGATIVE);
             _PyStackRef value;
@@ -11752,7 +11757,7 @@
             int opcode = UNARY_NOT;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(UNARY_NOT);
             _PyStackRef value;
@@ -11770,7 +11775,7 @@
             int opcode = UNPACK_EX;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(UNPACK_EX);
             _PyStackRef seq;
@@ -11797,7 +11802,7 @@
             int opcode = UNPACK_SEQUENCE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(UNPACK_SEQUENCE);
             PREDICTED_UNPACK_SEQUENCE:;
@@ -11850,7 +11855,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(UNPACK_SEQUENCE_LIST);
             static_assert(INLINE_CACHE_ENTRIES_UNPACK_SEQUENCE == 1, "incorrect cache size");
@@ -11901,7 +11906,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(UNPACK_SEQUENCE_TUPLE);
             static_assert(INLINE_CACHE_ENTRIES_UNPACK_SEQUENCE == 1, "incorrect cache size");
@@ -11943,7 +11948,7 @@
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(UNPACK_SEQUENCE_TWO_TUPLE);
             static_assert(INLINE_CACHE_ENTRIES_UNPACK_SEQUENCE == 1, "incorrect cache size");
@@ -11982,7 +11987,7 @@
             int opcode = WITH_EXCEPT_START;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(WITH_EXCEPT_START);
             _PyStackRef exit_func;
@@ -12036,7 +12041,7 @@
             int opcode = YIELD_VALUE;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(YIELD_VALUE);
             _PyStackRef retval;
@@ -12046,7 +12051,7 @@
             // The compiler treats any exception raised here as a failed close()
             // or throw() call.
             assert(frame->owner != FRAME_OWNED_BY_INTERPRETER);
-            frame->instr_ptr++;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
             PyGenObject *gen = _PyGen_GetGeneratorFromFrame(frame);
             assert(FRAME_SUSPENDED_YIELD_FROM == FRAME_SUSPENDED + 1);
             assert(oparg == 0 || oparg == 1);

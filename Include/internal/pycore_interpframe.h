@@ -13,6 +13,7 @@
 #include "pycore_structs.h"       // _PyStackRef
 #include "pycore_stackref.h"      // PyStackRef_AsPyObjectBorrow()
 #include "pycore_typedefs.h"      // _PyInterpreterFrame
+#include "pycore_pyatomic_ft_wrappers.h"
 
 
 #ifdef __cplusplus
@@ -147,11 +148,11 @@ _PyFrame_InitializeTLBC(PyThreadState *tstate, _PyInterpreterFrame *frame,
         // No thread-local bytecode exists for this thread yet; use the main
         // thread's copy, deferring thread-local bytecode creation to the
         // execution of RESUME.
-        frame->instr_ptr = _PyCode_CODE(code);
+        FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, _PyCode_CODE(code));
         frame->tlbc_index = 0;
     }
     else {
-        frame->instr_ptr = tlbc;
+        FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, tlbc);
         frame->tlbc_index = ((_PyThreadStateImpl *)tstate)->tlbc_index;
     }
 }
@@ -232,12 +233,14 @@ _PyFrame_SetStackPointer(_PyInterpreterFrame *frame, _PyStackRef *stack_pointer)
 static inline bool
 _PyFrame_IsIncomplete(_PyInterpreterFrame *frame)
 {
-    if (frame->owner >= FRAME_OWNED_BY_INTERPRETER) {
+    char owner = FT_ATOMIC_LOAD_CHAR_RELAXED(frame->owner);
+    if (owner >= FRAME_OWNED_BY_INTERPRETER) {
         return true;
     }
-    return frame->owner != FRAME_OWNED_BY_GENERATOR &&
-           frame->instr_ptr < _PyFrame_GetBytecode(frame) +
-                                  _PyFrame_GetCode(frame)->_co_firsttraceable;
+    _Py_CODEUNIT *instr_ptr = FT_ATOMIC_LOAD_PTR_RELAXED(frame->instr_ptr);
+    return owner != FRAME_OWNED_BY_GENERATOR &&
+           instr_ptr < _PyFrame_GetBytecode(frame) +
+               _PyFrame_GetCode(frame)->_co_firsttraceable;
 }
 
 static inline _PyInterpreterFrame *
@@ -356,7 +359,7 @@ _PyFrame_PushTrampolineUnchecked(PyThreadState *tstate, PyCodeObject *code, int 
 #ifdef Py_GIL_DISABLED
     _PyFrame_InitializeTLBC(tstate, frame, code);
 #else
-    frame->instr_ptr = _PyCode_CODE(code);
+    FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, _PyCode_CODE(code));
 #endif
     frame->owner = FRAME_OWNED_BY_THREAD;
     frame->visited = 0;

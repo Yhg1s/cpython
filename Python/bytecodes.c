@@ -203,10 +203,10 @@ dummy_func(
                 ERROR_IF(bytecode == NULL, error);
                 ptrdiff_t off = this_instr - _PyFrame_GetBytecode(frame);
                 frame->tlbc_index = ((_PyThreadStateImpl *)tstate)->tlbc_index;
-                frame->instr_ptr = bytecode + off;
                 // Make sure this_instr gets reset correctley for any uops that
                 // follow
-                next_instr = frame->instr_ptr;
+                next_instr = bytecode + off;
+                _Py_atomic_store_ptr_relaxed(&frame->instr_ptr, next_instr);
                 DISPATCH();
             }
             #endif
@@ -1276,7 +1276,7 @@ dummy_func(
             // The compiler treats any exception raised here as a failed close()
             // or throw() call.
             assert(frame->owner != FRAME_OWNED_BY_INTERPRETER);
-            frame->instr_ptr++;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
             PyGenObject *gen = _PyGen_GetGeneratorFromFrame(frame);
             assert(FRAME_SUSPENDED_YIELD_FROM == FRAME_SUSPENDED + 1);
             assert(oparg == 0 || oparg == 1);
@@ -1337,7 +1337,8 @@ dummy_func(
             if (oparg) {
                 PyObject *lasti = PyStackRef_AsPyObjectBorrow(values[0]);
                 if (PyLong_Check(lasti)) {
-                    frame->instr_ptr = _PyFrame_GetBytecode(frame) + PyLong_AsLong(lasti);
+                    FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr,
+                        _PyFrame_GetBytecode(frame) + PyLong_AsLong(lasti));
                     assert(!_PyErr_Occurred(tstate));
                 }
                 else {
@@ -4789,7 +4790,7 @@ dummy_func(
             assert(EMPTY());
             SAVE_STACK();
             _PyInterpreterFrame *gen_frame = &gen->gi_iframe;
-            frame->instr_ptr++;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
             _PyFrame_Copy(frame, gen_frame);
             assert(frame->frame_obj == NULL);
             gen->gi_frame_state = FRAME_CREATED;
@@ -5047,7 +5048,7 @@ dummy_func(
         }
 
         tier2 op(_SET_IP, (instr_ptr/4 --)) {
-            frame->instr_ptr = (_Py_CODEUNIT *)instr_ptr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, (_Py_CODEUNIT *)instr_ptr);
         }
 
         tier2 op(_CHECK_STACK_SPACE_OPERAND, (framesize/2 --)) {
@@ -5162,7 +5163,7 @@ dummy_func(
 
         tier2 op(_CHECK_VALIDITY_AND_SET_IP, (instr_ptr/4 --)) {
             DEOPT_IF(!current_executor->vm_data.valid);
-            frame->instr_ptr = (_Py_CODEUNIT *)instr_ptr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, (_Py_CODEUNIT *)instr_ptr);
         }
 
         tier2 op(_DEOPT, (--)) {
@@ -5173,7 +5174,7 @@ dummy_func(
         tier2 op(_ERROR_POP_N, (target/2 --)) {
             tstate->previous_executor = (PyObject *)current_executor;
             assert(oparg == 0);
-            frame->instr_ptr = _PyFrame_GetBytecode(frame) + target;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, _PyFrame_GetBytecode(frame) + target);
             SYNC_SP();
             GOTO_TIER_ONE(NULL);
         }

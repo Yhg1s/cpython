@@ -996,7 +996,8 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, _PyInterpreterFrame *frame, int 
     entry_frame.f_builtins = (PyObject*)0xaaa4;
 #endif
     entry_frame.f_executable = PyStackRef_None;
-    entry_frame.instr_ptr = (_Py_CODEUNIT *)_Py_INTERPRETER_TRAMPOLINE_INSTRUCTIONS + 1;
+    FT_ATOMIC_STORE_PTR_RELAXED(entry_frame.instr_ptr,
+        (_Py_CODEUNIT *)_Py_INTERPRETER_TRAMPOLINE_INSTRUCTIONS + 1);
     entry_frame.stackpointer = entry_frame.localsplus;
     entry_frame.owner = FRAME_OWNED_BY_INTERPRETER;
     entry_frame.visited = 0;
@@ -1024,7 +1025,7 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, _PyInterpreterFrame *frame, int 
             }
             ptrdiff_t off = frame->instr_ptr - _PyFrame_GetBytecode(frame);
             frame->tlbc_index = ((_PyThreadStateImpl *)tstate)->tlbc_index;
-            frame->instr_ptr = bytecode + off;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, bytecode + off);
         }
 #endif
         /* Because this avoids the RESUME, we need to update instrumentation */

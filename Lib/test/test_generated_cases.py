@@ -137,7 +137,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             SPAM();
@@ -159,7 +159,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef value;
@@ -184,7 +184,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef res;
@@ -210,7 +210,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef value;
@@ -237,7 +237,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef left;
@@ -267,7 +267,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef left;
@@ -299,7 +299,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP1;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP1);
             PREDICTED_OP1:;
@@ -316,7 +316,7 @@ class TestGeneratedCases(unittest.TestCase):
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP3);
             static_assert(INLINE_CACHE_ENTRIES_OP1 == 0, "incorrect cache size");
@@ -352,7 +352,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = A;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(A);
             _PyStackRef res;
@@ -373,7 +373,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = B;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(B);
             _PyStackRef res;
@@ -414,7 +414,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             if (cond) {
@@ -437,7 +437,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             if (cond) {
@@ -464,7 +464,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef left;
@@ -499,7 +499,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef left;
@@ -532,7 +532,7 @@ class TestGeneratedCases(unittest.TestCase):
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(OP);
             uint16_t counter = read_u16(&this_instr[1].cache);
@@ -561,7 +561,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             JUMP_TO_LABEL(somewhere);
@@ -596,7 +596,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(OP);
             PREDICTED_OP:;
@@ -639,7 +639,7 @@ class TestGeneratedCases(unittest.TestCase):
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 2;
             INSTRUCTION_STATS(OP1);
             _PyStackRef left;
@@ -659,7 +659,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP3;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 6;
             INSTRUCTION_STATS(OP3);
             static_assert(INLINE_CACHE_ENTRIES_OP == 5, "incorrect cache size");
@@ -694,7 +694,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 4;
             INSTRUCTION_STATS(OP);
             /* Skip 1 cache entry */
@@ -720,7 +720,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP1;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP1);
             DISPATCH();
@@ -743,7 +743,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP1;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP1);
             DISPATCH();
@@ -769,7 +769,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP1;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP1);
             DISPATCH();
@@ -780,7 +780,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP2;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP2);
             DISPATCH();
@@ -801,7 +801,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef *values;
@@ -828,7 +828,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef below;
@@ -860,7 +860,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef *values;
@@ -888,7 +888,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             if (oparg == 0) {
@@ -919,7 +919,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = M;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(M);
             _PyStackRef val1;
@@ -956,7 +956,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             ham;
@@ -981,7 +981,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = M;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(M);
             ham;
@@ -1002,7 +1002,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             ham;
@@ -1024,7 +1024,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = M;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(M);
             SPAM();
@@ -1064,7 +1064,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef *arg;
@@ -1090,7 +1090,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef *arg;
@@ -1132,7 +1132,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = INST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(INST);
             DISPATCH();
@@ -1162,7 +1162,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = TEST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(TEST);
             _PyStackRef w;
@@ -1206,7 +1206,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = TEST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(TEST);
             _PyStackRef x;
@@ -1249,7 +1249,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = TEST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(TEST);
             _PyStackRef a;
@@ -1301,7 +1301,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = TEST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(TEST);
             _PyStackRef x;
@@ -1353,7 +1353,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = TEST;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(TEST);
             _PyStackRef a;
@@ -1398,7 +1398,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP1;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP1);
             JUMP_TO_LABEL(here);
@@ -1409,7 +1409,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP2;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP2);
             JUMP_TO_LABEL(there);
@@ -1471,7 +1471,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = BALANCED;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BALANCED);
             _PyFrame_SetStackPointer(frame, stack_pointer);
@@ -1497,7 +1497,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = BALANCED;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BALANCED);
             DISPATCH();
@@ -1519,7 +1519,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = BALANCED;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BALANCED);
             _PyFrame_SetStackPointer(frame, stack_pointer);
@@ -1546,7 +1546,7 @@ class TestGeneratedCases(unittest.TestCase):
             #endif
             _Py_CODEUNIT* const this_instr = next_instr;
             (void)this_instr;
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(BALANCED);
             _PyFrame_SetStackPointer(frame, stack_pointer);
@@ -1570,7 +1570,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             frame->return_offset = 1 ;
@@ -1609,7 +1609,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             #ifdef Py_GIL_DISABLED
@@ -1647,7 +1647,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef out1;
@@ -1863,7 +1863,7 @@ class TestGeneratedCases(unittest.TestCase):
             int opcode = OP;
             (void)(opcode);
             #endif
-            frame->instr_ptr = next_instr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, next_instr);
             next_instr += 1;
             INSTRUCTION_STATS(OP);
             _PyStackRef in;

@@ -13,6 +13,7 @@
 #include "pycore_opcode_metadata.h" // _PyOpcode_Deopt, _PyOpcode_Caches
 #include "pycore_optimizer.h"     // _Py_Executors_InvalidateDependency()
 #include "pycore_unicodeobject.h" // _PyUnicode_Equal()
+#include "pycore_pyatomic_ft_wrappers.h"
 
 
 #include "frameobject.h"          // PyFrameObject
@@ -1721,7 +1722,8 @@ frame_setlineno(PyObject *op, PyObject* p_new_lineno, void *Py_UNUSED(closure))
     }
     /* Finally set the new lasti and return OK. */
     f->f_lineno = 0;
-    f->f_frame->instr_ptr = _PyFrame_GetBytecode(f->f_frame) + best_addr;
+    FT_ATOMIC_STORE_PTR_RELAXED(f->f_frame->instr_ptr,
+        _PyFrame_GetBytecode(f->f_frame) + best_addr);
     return 0;
 }
 
@@ -2044,7 +2046,7 @@ frame_init_get_vars(_PyInterpreterFrame *frame)
         frame->localsplus[offset + i] = PyStackRef_FromPyObjectNew(o);
     }
     // COPY_FREE_VARS doesn't have inline CACHEs, either:
-    frame->instr_ptr = _PyFrame_GetBytecode(frame);
+    FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, _PyFrame_GetBytecode(frame));
 }
 
 

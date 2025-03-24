@@ -1849,7 +1849,7 @@
             // The compiler treats any exception raised here as a failed close()
             // or throw() call.
             assert(frame->owner != FRAME_OWNED_BY_INTERPRETER);
-            frame->instr_ptr++;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
             PyGenObject *gen = _PyGen_GetGeneratorFromFrame(frame);
             assert(FRAME_SUSPENDED_YIELD_FROM == FRAME_SUSPENDED + 1);
             assert(oparg == 0 || oparg == 1);
@@ -6500,7 +6500,7 @@
             assert(EMPTY());
             _PyFrame_SetStackPointer(frame, stack_pointer);
             _PyInterpreterFrame *gen_frame = &gen->gi_iframe;
-            frame->instr_ptr++;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, frame->instr_ptr + 1);
             _PyFrame_Copy(frame, gen_frame);
             assert(frame->frame_obj == NULL);
             gen->gi_frame_state = FRAME_CREATED;
@@ -6780,7 +6780,7 @@
 
         case _SET_IP: {
             PyObject *instr_ptr = (PyObject *)CURRENT_OPERAND0();
-            frame->instr_ptr = (_Py_CODEUNIT *)instr_ptr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, (_Py_CODEUNIT *)instr_ptr);
             break;
         }
 
@@ -6969,7 +6969,7 @@
                 UOP_STAT_INC(uopcode, miss);
                 JUMP_TO_JUMP_TARGET();
             }
-            frame->instr_ptr = (_Py_CODEUNIT *)instr_ptr;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, (_Py_CODEUNIT *)instr_ptr);
             break;
         }
 
@@ -6984,7 +6984,7 @@
             uint32_t target = (uint32_t)CURRENT_OPERAND0();
             tstate->previous_executor = (PyObject *)current_executor;
             assert(oparg == 0);
-            frame->instr_ptr = _PyFrame_GetBytecode(frame) + target;
+            FT_ATOMIC_STORE_PTR_RELAXED(frame->instr_ptr, _PyFrame_GetBytecode(frame) + target);
             GOTO_TIER_ONE(NULL);
             break;
         }

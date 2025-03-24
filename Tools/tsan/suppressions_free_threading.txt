@@ -14,10 +14,7 @@
 
 race_top:assign_version_tag
 race_top:_Py_slot_tp_getattr_hook
-race_top:dump_traceback
 race_top:fatal_error
-race_top:_PyFrame_GetCode
-race_top:_PyFrame_Initialize
 race_top:_PyObject_TryGetInstanceAttribute
 race_top:PyUnstable_InterpreterFrame_GetLine
 race_top:type_modified_unlocked
@@ -43,3 +40,6 @@ race_top:rangeiter_next
 # of ptr-sized copies to be thread-safe. (Issue #129069)
 race:list_ass_slice_lock_held
 race:list_inplace_repeat_lock_held
+
+# The faulthandler module inspects arbitrary frames during crash reports
+race:^dump_traceback$
