@@ -4928,7 +4928,7 @@ AC_ARG_WITH([mimalloc],
   [AS_HELP_STRING([--with-mimalloc],
                  [build with mimalloc memory allocator (default is yes if C11 stdatomic.h is available.)])],
   [],
-  [with_mimalloc="$ac_cv_header_stdatomic_h"]
+  [with_mimalloc="$disable_gil"]
 )
 
 if test "$with_mimalloc" != no; then

@@ -18633,7 +18633,7 @@ if test ${with_mimalloc+y}
 then :
   withval=$with_mimalloc;
 else case e in #(
-  e) with_mimalloc="$ac_cv_header_stdatomic_h"
+  e) with_mimalloc="$disable_gil"
  ;;
 esac
 fi
