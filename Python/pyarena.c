@@ -1,5 +1,6 @@
 #include "Python.h"
 #include "pycore_pyarena.h"       // PyArena
+#include "pycore_list.h"
 
 /* A simple arena block structure.
 
@@ -58,7 +59,7 @@ struct _arena {
        pointers associated with this arena.  They will be DECREFed
        when the arena is freed.
     */
-    PyObject *a_objects;
+    PyListObject *a_objects;
 
 #if defined(Py_DEBUG)
     /* Debug output */
@@ -134,7 +135,7 @@ _PyArena_New(void)
         PyMem_Free((void *)arena);
         return (PyArena*)PyErr_NoMemory();
     }
-    arena->a_objects = PyList_New(0);
+    arena->a_objects = (PyListObject *)PyList_New(0);
     if (!arena->a_objects) {
         block_free(arena->a_head);
         PyMem_Free((void *)arena);
@@ -199,9 +200,5 @@ _PyArena_Malloc(PyArena *arena, size_t size)
 int
 _PyArena_AddPyObject(PyArena *arena, PyObject *obj)
 {
-    int r = PyList_Append(arena->a_objects, obj);
-    if (r >= 0) {
-        Py_DECREF(obj);
-    }
-    return r;
+    return _PyList_AppendTakeRef(arena->a_objects, obj);
 }

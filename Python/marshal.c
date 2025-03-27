@@ -14,6 +14,7 @@
 #include "pycore_pystate.h"          // _PyInterpreterState_GET()
 #include "pycore_setobject.h"        // _PySet_NextEntryRef()
 #include "pycore_unicodeobject.h"    // _PyUnicode_InternImmortal()
+#include "pycore_list.h"
 
 #include "marshal.h"                 // Py_MARSHAL_VERSION
 
@@ -781,7 +782,7 @@ typedef struct {
     const char *end;
     char *buf;
     Py_ssize_t buf_size;
-    PyObject *refs;  /* a list */
+    PyListObject *refs;  /* a list */
     int allow_code;
 } RFILE;
 
@@ -1077,7 +1078,7 @@ r_ref_reserve(int flag, RFILE *p)
             PyErr_SetString(PyExc_ValueError, "bad marshal data (index list too large)");
             return -1;
         }
-        if (PyList_Append(p->refs, Py_None) < 0)
+        if (_PyList_AppendTakeRef(p->refs, Py_NewRef(Py_None)) < 0)
             return -1;
         return idx;
     } else
@@ -1113,7 +1114,7 @@ r_ref(PyObject *o, int flag, RFILE *p)
     assert(flag & FLAG_REF);
     if (o == NULL)
         return NULL;
-    if (PyList_Append(p->refs, o) < 0) {
+    if (_PyList_AppendTakeRef(p->refs, Py_NewRef(o)) < 0) {
         Py_DECREF(o); /* release the new object */
         return NULL;
     }
