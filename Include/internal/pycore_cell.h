@@ -2,6 +2,7 @@
 #define Py_INTERNAL_CELL_H
 
 #include "pycore_critical_section.h"
+#include "pycore_object.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +37,8 @@ static inline PyObject *
 PyCell_GetRef(PyCellObject *cell)
 {
     PyObject *res;
+    if (_PyObject_IsUniquelyReferenced(_PyObject_CAST(cell)))
+        return Py_XNewRef(cell->ob_ref);
     Py_BEGIN_CRITICAL_SECTION(cell);
     res = Py_XNewRef(cell->ob_ref);
     Py_END_CRITICAL_SECTION();
