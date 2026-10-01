@@ -38,7 +38,7 @@ jobs:
       run_tests: ${{ steps.check.outputs.run_tests }}
       run_ssl_tests: ${{ steps.check.outputs.run_ssl_tests }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - name: Check for source changes
         id: check
         run: |
@@ -70,8 +70,8 @@ jobs:
     needs: check_source
     if: needs.check_source.outputs.run_tests == 'true'
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
       - name: Install Dependencies
         run: |
             sudo ./.github/workflows/posix-deps-apt.sh
@@ -101,8 +101,8 @@ jobs:
     needs: check_source
     if: needs.check_source.outputs.run_tests == 'true'
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
       - name: Install Dependencies
         run: sudo ./.github/workflows/posix-deps-apt.sh
       - name: Add ccache to PATH
@@ -156,7 +156,7 @@ jobs:
     env:
        IncludeUwp: 'true'
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Build CPython
       run: .\PCbuild\build.bat -e -d -p Win32
     - name: Display build info
@@ -173,7 +173,7 @@ jobs:
     env:
        IncludeUwp: 'true'
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Register MSVC problem matcher
       run: echo "::add-matcher::.github/problem-matchers/msvc.json"
     - name: Build CPython
@@ -195,7 +195,7 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
       PYTHONSTRICTEXTENSIONBUILD: 1
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Install Homebrew dependencies
       run: brew install pkg-config openssl@1.1 xz gdbm tcl-tk
     - name: Configure CPython
@@ -224,7 +224,7 @@ jobs:
       OPENSSL_VER: 1.1.1t
       PYTHONSTRICTEXTENSIONBUILD: 1
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Register gcc problem matcher
       run: echo "::add-matcher::.github/problem-matchers/gcc.json"
     - name: Install Dependencies
@@ -236,7 +236,7 @@ jobs:
         echo "LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/multissl/openssl/${OPENSSL_VER}/lib" >> $GITHUB_ENV
     - name: 'Restore OpenSSL build'
       id: cache-openssl
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: ./multissl/openssl/${{ env.OPENSSL_VER }}
         key: ${{ runner.os }}-multissl-openssl-${{ env.OPENSSL_VER }}
@@ -288,7 +288,7 @@ jobs:
       OPENSSL_DIR: ${{ github.workspace }}/multissl/openssl/${{ matrix.openssl_ver }}
       LD_LIBRARY_PATH: ${{ github.workspace }}/multissl/openssl/${{ matrix.openssl_ver }}/lib
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Register gcc problem matcher
       run: echo "::add-matcher::.github/problem-matchers/gcc.json"
     - name: Install Dependencies
@@ -300,7 +300,7 @@ jobs:
         echo "LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/multissl/openssl/${OPENSSL_VER}/lib" >> $GITHUB_ENV
     - name: 'Restore OpenSSL build'
       id: cache-openssl
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: ./multissl/openssl/${{ env.OPENSSL_VER }}
         key: ${{ runner.os }}-multissl-openssl-${{ env.OPENSSL_VER }}
@@ -333,7 +333,7 @@ jobs:
       PYTHONSTRICTEXTENSIONBUILD: 1
       ASAN_OPTIONS: detect_leaks=0:allocator_may_return_null=1:handle_segv=0
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Register gcc problem matcher
       run: echo "::add-matcher::.github/problem-matchers/gcc.json"
     - name: Install Dependencies
@@ -345,7 +345,7 @@ jobs:
         echo "LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/multissl/openssl/${OPENSSL_VER}/lib" >> $GITHUB_ENV
     - name: 'Restore OpenSSL build'
       id: cache-openssl
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: ./multissl/openssl/${{ env.OPENSSL_VER }}
         key: ${{ runner.os }}-multissl-openssl-${{ env.OPENSSL_VER }}
