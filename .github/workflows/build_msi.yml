@@ -32,7 +32,7 @@ jobs:
     name: 'Windows (x86) Installer'
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Build CPython installer
       run: .\Tools\msi\build.bat -x86
 
@@ -40,6 +40,6 @@ jobs:
     name: 'Windows (x64) Installer'
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Build CPython installer
       run: .\Tools\msi\build.bat -x64
