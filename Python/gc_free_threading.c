@@ -65,6 +65,13 @@ struct visitor_args {
     size_t offset;  // offset of PyObject from start of block
 };
 
+// Pages to move between the young and old heaps (generational collection),
+// decided by the scan and moved when it is done.
+struct gc_page_list {
+    mi_page_t **pages;
+    Py_ssize_t n, cap;
+};
+
 // Per-collection state
 struct collection_state {
     struct visitor_args base;
@@ -83,6 +90,25 @@ struct collection_state {
     struct worklist legacy_finalizers;
     struct worklist wrcb_to_call;
     struct worklist objs_to_decref;
+    // Young collection: only objects on pages of the young heaps are
+    // candidates (see "Generational collection" below).
+    bool young;
+    // Objects that survived this collection and were marked old by it.
+    Py_ssize_t aged;
+    // The candidates of a young collection, in heap order: its pages are
+    // walked once, and the later phases only go over the candidates.
+    PyObject **young_objs;
+    Py_ssize_t young_n, young_cap;
+    bool young_oom;
+    Py_ssize_t scan_page_old;       // old objects on the page being walked
+    // Generational collection: the page the scan is in, how many of its
+    // blocks are in use and how many of those are garbage; the pages to
+    // promote and demote, and their surviving blocks.
+    mi_page_t *scan_page;
+    Py_ssize_t scan_page_used;
+    Py_ssize_t scan_page_garbage;
+    struct gc_page_list promote, demote;
+    Py_ssize_t promote_live, demote_live;
 };
 
 // iterate over a worklist
@@ -367,8 +393,15 @@ op_from_block_all_gc(void *block, void *arg)
 
 static int
 gc_visit_heaps_lock_held(PyInterpreterState *interp, mi_block_visit_fun *visitor,
-                         struct visitor_args *arg)
+                         struct visitor_args *arg, bool young_only)
 {
+    // The heaps to visit for objects without and with pre-header.
+    int heaps[2][2] = {
+        {_Py_MIMALLOC_HEAP_GC_YOUNG, _Py_MIMALLOC_HEAP_GC},
+        {_Py_MIMALLOC_HEAP_GC_PRE_YOUNG, _Py_MIMALLOC_HEAP_GC_PRE},
+    };
+    int nheaps = young_only ? 1 : 2;
+
     // Offset of PyObject header from start of memory block.
     Py_ssize_t offset_base = 0;
     if (_PyMem_DebugEnabled()) {
@@ -387,29 +420,33 @@ gc_visit_heaps_lock_held(PyInterpreterState *interp, mi_block_visit_fun *visitor
             continue;
         }
 
-        arg->offset = offset_base;
-        if (!mi_heap_visit_blocks(&m->heaps[_Py_MIMALLOC_HEAP_GC], true,
-                                  visitor, arg)) {
-            return -1;
-        }
-        arg->offset = offset_pre;
-        if (!mi_heap_visit_blocks(&m->heaps[_Py_MIMALLOC_HEAP_GC_PRE], true,
-                                  visitor, arg)) {
-            return -1;
+        for (int h = 0; h < nheaps; h++) {
+            arg->offset = offset_base;
+            if (!mi_heap_visit_blocks(&m->heaps[heaps[0][h]], true,
+                                      visitor, arg)) {
+                return -1;
+            }
+            arg->offset = offset_pre;
+            if (!mi_heap_visit_blocks(&m->heaps[heaps[1][h]], true,
+                                      visitor, arg)) {
+                return -1;
+            }
         }
     }
 
     // visit blocks in the per-interpreter abandoned pool (from dead threads)
     mi_abandoned_pool_t *pool = &interp->mimalloc.abandoned_pool;
-    arg->offset = offset_base;
-    if (!_mi_abandoned_pool_visit_blocks(pool, _Py_MIMALLOC_HEAP_GC, true,
-                                         visitor, arg)) {
-        return -1;
-    }
-    arg->offset = offset_pre;
-    if (!_mi_abandoned_pool_visit_blocks(pool, _Py_MIMALLOC_HEAP_GC_PRE, true,
-                                         visitor, arg)) {
-        return -1;
+    for (int h = 0; h < nheaps; h++) {
+        arg->offset = offset_base;
+        if (!_mi_abandoned_pool_visit_blocks(pool, heaps[0][h], true,
+                                             visitor, arg)) {
+            return -1;
+        }
+        arg->offset = offset_pre;
+        if (!_mi_abandoned_pool_visit_blocks(pool, heaps[1][h], true,
+                                             visitor, arg)) {
+            return -1;
+        }
     }
     return 0;
 }
@@ -427,7 +464,7 @@ gc_visit_heaps(PyInterpreterState *interp, mi_block_visit_fun *visitor,
 
     int err;
     HEAD_LOCK(&_PyRuntime);
-    err = gc_visit_heaps_lock_held(interp, visitor, arg);
+    err = gc_visit_heaps_lock_held(interp, visitor, arg, false);
     HEAD_UNLOCK(&_PyRuntime);
     return err;
 }
@@ -884,10 +921,26 @@ exit:
 #endif // GC_MARK_ALIVE_STACKS
 #endif // GC_ENABLE_MARK_ALIVE
 
+static bool gc_is_young_object(PyObject *op);
+static int gc_generational_enabled(void);
+static void gc_scan_page_done(struct collection_state *state);
+
 static void
 queue_untracked_obj_decref(PyObject *op, struct collection_state *state)
 {
     assert(Py_REFCNT(op) == 0);
+    if (state->young && _PyObject_GC_IS_TRACKED(op) && !gc_is_frozen(op) &&
+        !gc_is_young_object(op))
+    {
+        // An old object that this young collection won't look at: release
+        // it after the pause like an untracked one.
+        op->ob_ref_shared += (1 << _Py_REF_SHARED_SHIFT);
+#ifdef Py_REF_DEBUG
+        _Py_IncRefTotal(_PyThreadState_GET());
+#endif
+        worklist_push(&state->objs_to_decref, op);
+        return;
+    }
     // gh-142975: We have to treat frozen objects as untracked in this function
     // or else they might be picked up in a future collection, which breaks the
     // assumption that all incoming objects have a non-zero reference count.
@@ -1120,6 +1173,9 @@ validate_gc_objects(const mi_heap_t *heap, const mi_heap_area_t *area,
 #endif
 
 static bool
+mark_object(PyObject *op, struct collection_state *state);
+
+static bool
 mark_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
                   void *block, size_t block_size, void *args)
 {
@@ -1127,7 +1183,12 @@ mark_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
     if (op == NULL) {
         return true;
     }
+    return mark_object(op, (struct collection_state *)args);
+}
 
+static bool
+mark_object(PyObject *op, struct collection_state *state)
+{
     if (gc_is_alive(op) || !gc_is_unreachable(op)) {
         // Object was already marked as reachable.
         return true;
@@ -1140,7 +1201,6 @@ mark_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
     // then we can't collect objects with deferred references because we may
     // have missed some reference to the object on the stack. In that case,
     // treat the object as reachable even if gc_refs is zero.
-    struct collection_state *state = (struct collection_state *)args;
     int keep_alive = (state->skip_deferred_objects &&
                       _PyObject_HasDeferredRefcount(op));
 
@@ -1180,15 +1240,28 @@ has_legacy_finalizer(PyObject *op)
     return Py_TYPE(op)->tp_del != NULL;
 }
 
+static void
+scan_object(PyObject *op, struct collection_state *state);
+
 static bool
 scan_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
                   void *block, size_t block_size, void *args)
 {
+    struct collection_state *state = (struct collection_state *)args;
+    if (block == NULL) {
+        // mimalloc visits each page's area before its blocks: a new page.
+        if (gc_generational_enabled()) {
+            gc_scan_page_done(state);
+            state->scan_page = _mi_ptr_page(area->blocks);
+            state->scan_page_used = (Py_ssize_t)area->used;
+            state->scan_page_garbage = 0;
+        }
+        return true;
+    }
     PyObject *op = op_from_block_all_gc(block, args);
     if (op == NULL) {
         return true;
     }
-    struct collection_state *state = (struct collection_state *)args;
     // The free-threaded GC cost is proportional to the number of objects in
     // the mimalloc GC heap and so we should include the counts for untracked
     // and frozen objects as well.  This is especially important if many
@@ -1197,8 +1270,20 @@ scan_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
     if (!_PyObject_GC_IS_TRACKED(op) || gc_is_frozen(op)) {
         return true;
     }
+    scan_object(op, state);
+    return true;
+}
 
+// Sort a tracked object after marking: garbage is queued, a reachable object
+// gets its `ob_tid` back.
+static void
+scan_object(PyObject *op, struct collection_state *state)
+{
     if (gc_is_unreachable(op)) {
+        // (Garbage found by a full collection: its deallocation is not an
+        // old object dying on its own.)
+        gc_clear_bit(op, _PyGC_BITS_OLD);
+
         // Disable deferred refcounting for unreachable objects so that they
         // are collected immediately after finalization.
         disable_deferred_refcounting(op);
@@ -1214,11 +1299,14 @@ scan_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
         }
         else {
             worklist_push(&state->unreachable, op);
+            if (state->scan_page != NULL && _mi_ptr_page(op) == state->scan_page) {
+                state->scan_page_garbage++;
+            }
         }
         // It is possible this object will be resurrected but
         // for now we assume it will be deallocated.
         state->long_lived_total--;
-        return true;
+        return;
     }
 
     if (state->reason == _Py_GC_REASON_SHUTDOWN) {
@@ -1231,7 +1319,14 @@ scan_heap_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
     // object is reachable, restore `ob_tid`; we're done with these objects
     gc_restore_tid(op);
     gc_clear_alive(op);
-    return true;
+    if (!gc_has_bit(op, _PyGC_BITS_OLD) && gc_generational_enabled() &&
+        !_PyObject_HasDeferredRefcount(op))
+    {
+        // A survivor: later young collections treat it as old, wherever it
+        // lives (see "Object ages" below).
+        gc_set_bit(op, _PyGC_BITS_OLD);
+        state->aged++;
+    }
 }
 
 static int
@@ -1438,10 +1533,340 @@ gc_mark_alive_from_roots(PyInterpreterState *interp,
 #endif // GC_ENABLE_MARK_ALIVE
 
 
+// Generational collection (experimental, PYTHON_GC_GENERATIONAL=1).
+//
+// GC objects are allocated in the "young" mimalloc heaps.  A young
+// collection considers only the objects on pages of those heaps: the usual
+// algorithm (refcount minus references from other candidates) treats any
+// reference from outside the candidate set -- including from old objects --
+// as external, so no write barrier is needed.  Garbage cycles that include
+// old objects are left for full collections.  The scan of each collection
+// counts, per page, the blocks in use and the garbage among them; young pages
+// whose survivors fill at least GC_PROMOTE_PERCENT of them are moved to the
+// old heaps once the scan is done.  Sparser pages stay young (and keep being
+// allocated from), so promotion doesn't strand free space.  Any subset of
+// objects is a valid candidate set, so objects that stay young are merely
+// examined again.
+
+// Page occupancy thresholds, in percent of the page's capacity.
+#define GC_PROMOTE_PERCENT 80
+#define GC_DEMOTE_PERCENT 50
+
+// Young collections run every GC_YOUNG_THRESHOLD new GC objects (or sooner,
+// when the full collection threshold is lower).  The trigger adapts: when
+// at least GC_YOUNG_SURVIVAL_HIGH percent of a young collection's candidates
+// survive, collecting that often finds little, and the trigger doubles (up to
+// GC_YOUNG_THRESHOLD_MAX); below GC_YOUNG_SURVIVAL_LOW percent it halves.
+#define GC_YOUNG_THRESHOLD 20000
+#define GC_YOUNG_THRESHOLD_MAX (8 * GC_YOUNG_THRESHOLD)
+#define GC_YOUNG_SURVIVAL_HIGH 60
+#define GC_YOUNG_SURVIVAL_LOW 40
+
+static int
+gc_generational_enabled(void)
+{
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *env = getenv("PYTHON_GC_GENERATIONAL");
+        enabled = env != NULL && atoi(env) > 0;
+    }
+    return enabled;
+}
+
+static bool
+gc_is_young_page(mi_page_t *page)
+{
+    return (page->tag == _Py_MIMALLOC_HEAP_GC_YOUNG ||
+            page->tag == _Py_MIMALLOC_HEAP_GC_PRE_YOUNG);
+}
+
+static bool
+gc_is_young_object(PyObject *op)
+{
+    return (!gc_has_bit(op, _PyGC_BITS_OLD) &&
+            gc_is_young_page(_mi_ptr_page(op)));
+}
+
+static bool
+gc_page_list_push(struct gc_page_list *l, mi_page_t *page)
+{
+    if (l->n == l->cap) {
+        Py_ssize_t cap = l->cap ? l->cap * 2 : 256;
+        mi_page_t **pages = PyMem_RawRealloc(l->pages, cap * sizeof(*pages));
+        if (pages == NULL) {
+            return false;   // out of memory: the page just doesn't move
+        }
+        l->pages = pages;
+        l->cap = cap;
+    }
+    l->pages[l->n++] = page;
+    return true;
+}
+
+static void
+gc_page_list_clear(struct gc_page_list *l)
+{
+    PyMem_RawFree(l->pages);
+    l->pages = NULL;
+    l->n = l->cap = 0;
+}
+
+// Called by the scan when it is done with a page: decide from the page's
+// surviving blocks whether it moves.  A young page is promoted if its
+// survivors fill at least GC_PROMOTE_PERCENT of it and it already survived a
+// previous collection (a tenuring threshold, so that objects merely in use
+// at the time of one collection, e.g. in other threads, aren't promoted).
+//
+// Demotion: an old page whose surviving blocks fall below GC_DEMOTE_PERCENT
+// of its capacity moves back to the young heap, so that its free blocks are
+// allocated from again instead of being stranded until the page is
+// completely empty.  Its remaining objects become young candidates again
+// (any subset of objects is a valid candidate set).  The gap to
+// GC_PROMOTE_PERCENT keeps pages from bouncing.  Only full collections
+// demote, from the scan like promotion: a collection only touches the pages
+// it examines, so young collections stay independent of the old heap's size.
+static void
+gc_scan_page_done(struct collection_state *state)
+{
+    mi_page_t *page = state->scan_page;
+    state->scan_page = NULL;
+    if (page == NULL || mi_page_heap(page) == NULL) {
+        return;     // (pages of abandoned segments stay where they are)
+    }
+    Py_ssize_t live = state->scan_page_used - state->scan_page_garbage;
+    if (live <= 0) {
+        return;
+    }
+    size_t capacity = page->capacity;
+    if (gc_is_young_page(page)) {
+        if ((size_t)live * 100 < (size_t)GC_PROMOTE_PERCENT * capacity) {
+            return;
+        }
+        if (!page->gc_survived) {
+            page->gc_survived = 1;
+            return;
+        }
+        if (gc_page_list_push(&state->promote, page)) {
+            state->promote_live += live;
+        }
+    }
+    else if ((size_t)live * 100 < (size_t)GC_DEMOTE_PERCENT * capacity) {
+        page->gc_survived = 0;
+        if (gc_page_list_push(&state->demote, page)) {
+            state->demote_live += live;
+        }
+    }
+}
+
+// Move the pages the scan decided on.  Returns the net number of live
+// objects moved to the old heaps.  Called with the world stopped, after the
+// scan.
+static Py_ssize_t
+gc_move_pages(struct collection_state *state)
+{
+    // A thread's young and old heaps are adjacent entries of its heap array.
+    const ptrdiff_t to_old = _Py_MIMALLOC_HEAP_GC - _Py_MIMALLOC_HEAP_GC_YOUNG;
+    static_assert(_Py_MIMALLOC_HEAP_GC_PRE - _Py_MIMALLOC_HEAP_GC_PRE_YOUNG ==
+                  _Py_MIMALLOC_HEAP_GC - _Py_MIMALLOC_HEAP_GC_YOUNG,
+                  "young and old heaps must be the same distance apart");
+    for (Py_ssize_t i = 0; i < state->promote.n; i++) {
+        mi_page_t *page = state->promote.pages[i];
+        _mi_page_move_to_heap(page, mi_page_heap(page) + to_old);
+    }
+    for (Py_ssize_t i = 0; i < state->demote.n; i++) {
+        mi_page_t *page = state->demote.pages[i];
+        _mi_page_move_to_heap(page, mi_page_heap(page) - to_old);
+    }
+    Py_ssize_t moved = state->promote_live - state->demote_live;
+    gc_page_list_clear(&state->promote);
+    gc_page_list_clear(&state->demote);
+    state->promote_live = state->demote_live = 0;
+    return moved;
+}
+
+
+// Young collections.  update_refs() initializes the refs of the objects it
+// reaches through tp_traverse, which would overwrite ob_tid of old objects;
+// a young collection instead initializes all candidates first, then
+// subtracts the references between candidates.  Marking and scanning only
+// act on candidates (objects with the UNREACHABLE bit).
+//
+// Object ages: an object that survives a collection gets _PyGC_BITS_OLD, and
+// is not a candidate of later young collections even while its page is still
+// young (pages are only promoted when they are dense, so that promotion
+// doesn't strand free space; sparse pages would otherwise make every young
+// collection re-examine, and traverse, their survivors).  Old objects on
+// young pages are like objects on old pages: references from them keep
+// candidates alive, and garbage cycles through them wait for a full
+// collection.  New objects, including ones in reused memory, start young.
+//
+// Objects with deferred reference counts (top-level functions, methods
+// defined in class bodies, modules, types and descriptors) are not
+// candidates: they are treated as alive, like old objects.  References from
+// thread stacks only need to be counted for those objects (other stack
+// references are counted in the refcount, or borrowed from a counted
+// reference in the same frame), so young collections don't walk the thread
+// stacks, and their cost doesn't depend on stack depth.
+
+// Called by the young walk when it is done with a page: a young page whose
+// old objects (survivors of earlier collections) fill at least
+// GC_PROMOTE_PERCENT of it moves to the old heap, so that later young
+// collections don't walk it.
+static void
+gc_young_page_done(struct collection_state *state)
+{
+    mi_page_t *page = state->scan_page;
+    state->scan_page = NULL;
+    if (page == NULL || mi_page_heap(page) == NULL) {
+        return;     // (pages of abandoned segments stay where they are)
+    }
+    Py_ssize_t old = state->scan_page_old;
+    if ((size_t)old * 100 >= (size_t)GC_PROMOTE_PERCENT * page->capacity) {
+        if (gc_page_list_push(&state->promote, page)) {
+            state->promote_live += old;
+        }
+    }
+}
+
+static bool
+young_init_refs(const mi_heap_t *heap, const mi_heap_area_t *area,
+                void *block, size_t block_size, void *args)
+{
+    struct collection_state *state = (struct collection_state *)args;
+    if (block == NULL) {
+        // mimalloc visits each page's area before its blocks: a new page.
+        gc_young_page_done(state);
+        state->scan_page = _mi_ptr_page(area->blocks);
+        state->scan_page_old = 0;
+        return true;
+    }
+    PyObject *op = op_from_block(block, args, false);
+    if (op == NULL) {
+        return true;
+    }
+    if (gc_has_bit(op, _PyGC_BITS_OLD)) {
+        state->scan_page_old++;
+        return true;
+    }
+    if (_PyObject_HasDeferredRefcount(op)) {
+        return true;
+    }
+    if (_Py_IsImmortal(op)) {
+        op->ob_tid = 0;
+        _PyObject_GC_UNTRACK(op);
+        gc_clear_unreachable(op);
+        return true;
+    }
+    Py_ssize_t refcount = Py_REFCNT(op);
+    _PyObject_ASSERT(op, refcount >= 0);
+    if (refcount > 0 && gc_maybe_untrack(op)) {
+        return true;
+    }
+    if (state->young_n == state->young_cap) {
+        Py_ssize_t cap = state->young_cap ? state->young_cap * 2 : 4096;
+        PyObject **objs = PyMem_RawRealloc(state->young_objs, cap * sizeof(*objs));
+        if (objs == NULL) {
+            state->young_oom = true;
+            return true;
+        }
+        state->young_objs = objs;
+        state->young_cap = cap;
+    }
+    state->young_objs[state->young_n++] = op;
+    state->candidates++;
+    assert(!gc_is_alive(op) && !gc_is_unreachable(op));
+    gc_set_unreachable(op);
+    op->ob_tid = (uintptr_t)refcount;
+    return true;
+}
+
+static int
+visit_decref_young(PyObject *op, void *arg)
+{
+    if (gc_is_unreachable(op)) {
+        gc_decref(op);
+    }
+    return 0;
+}
+
+static int
+gc_visit_young_heaps(PyInterpreterState *interp, mi_block_visit_fun *visitor,
+                     struct visitor_args *arg)
+{
+    assert(interp->stoptheworld.world_stopped);
+    HEAD_LOCK(&_PyRuntime);
+    int err = gc_visit_heaps_lock_held(interp, visitor, arg, true);
+    HEAD_UNLOCK(&_PyRuntime);
+    return err;
+}
+
+static void
+young_restore_refs(struct collection_state *state)
+{
+    for (Py_ssize_t i = 0; i < state->young_n; i++) {
+        PyObject *op = state->young_objs[i];
+        gc_restore_tid(op);
+        gc_clear_unreachable(op);
+        gc_clear_alive(op);
+    }
+}
+
+static int
+deduce_unreachable_young(PyInterpreterState *interp,
+                         struct collection_state *state)
+{
+    // One walk of the young pages finds the candidates; the other phases go
+    // over the candidates only, so their cost doesn't depend on how many old
+    // objects the young pages hold.
+    gc_visit_young_heaps(interp, &young_init_refs, &state->base);
+    gc_young_page_done(state);
+    PyObject **objs = state->young_objs;
+    Py_ssize_t n = state->young_n;
+    int err = 0;
+    if (state->young_oom) {
+        young_restore_refs(state);
+        err = -1;
+    }
+    else {
+        for (Py_ssize_t i = 0; i < n; i++) {
+            Py_TYPE(objs[i])->tp_traverse(objs[i], visit_decref_young, NULL);
+        }
+        for (Py_ssize_t i = 0; i < n; i++) {
+            if (!mark_object(objs[i], state)) {
+                // On out-of-memory, restore the refcounts and bail out.
+                young_restore_refs(state);
+                err = -1;
+                break;
+            }
+        }
+    }
+    if (err == 0) {
+        for (Py_ssize_t i = 0; i < n; i++) {
+            scan_object(objs[i], state);
+        }
+    }
+    PyMem_RawFree(state->young_objs);
+    state->young_objs = NULL;
+    state->young_n = state->young_cap = 0;
+    if (err < 0) {
+        return -1;
+    }
+
+    if (state->legacy_finalizers.head) {
+        if (move_legacy_finalizer_reachable(state) < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int
 deduce_unreachable_heap(PyInterpreterState *interp,
                         struct collection_state *state)
 {
+    if (state->young) {
+        return deduce_unreachable_young(interp, state);
+    }
     // Identify objects that are directly reachable from outside the GC heap
     // by computing the difference between the refcount and the number of
     // incoming references.
@@ -1467,6 +1892,7 @@ deduce_unreachable_heap(PyInterpreterState *interp,
     // Identify remaining unreachable objects and push them onto a stack.
     // Restores ob_tid for reachable objects.
     gc_visit_heaps(interp, &scan_heap_visitor, &state->base);
+    gc_scan_page_done(state);
 
     if (state->legacy_finalizers.head) {
         // There may be objects reachable from legacy finalizers that are in
@@ -1819,7 +2245,8 @@ _PyGC_VisitStackRef(_PyStackRef *ref, visitproc visit, void *arg)
     // regular references.
     assert(!PyStackRef_IsTaggedInt(*ref));
     if (PyStackRef_RefcountOnObject(*ref) ||
-        (visit != visit_decref && visit != visit_decref_unreachable))
+        (visit != visit_decref && visit != visit_decref_unreachable &&
+         visit != visit_decref_young))
     {
         Py_VISIT(PyStackRef_AsPyObjectBorrow(*ref));
     }
@@ -1996,6 +2423,21 @@ cleanup_worklist(struct worklist *worklist)
     }
 }
 
+// A full collection runs when the objects allocated (or, with generational
+// collection, promoted) since the last one exceed 1/GC_HEAP_DIVISOR of the
+// heap.
+#define GC_HEAP_DIVISOR 4
+
+// The net growth of the old generation since the last full collection:
+// objects that became old, less old objects freed by reference counting
+// (what is left is live old objects and old cyclic garbage).
+static Py_ssize_t
+gc_old_growth(GCState *gcstate)
+{
+    Py_ssize_t pending = _Py_atomic_load_ssize_relaxed(&gcstate->long_lived_pending);
+    return Py_MAX(pending, 0);
+}
+
 static bool
 gc_should_collect(GCState *gcstate)
 {
@@ -2010,7 +2452,21 @@ gc_should_collect(GCState *gcstate)
         // extra conditions if generations[1].threshold is set to zero.
         return true;
     }
-    if (count < gcstate->long_lived_total / 4) {
+    if (gc_generational_enabled() && !gcstate->freeze_active) {
+        // (After gc.freeze() every collection is a full one, so the
+        // non-generational trigger below applies.)
+        // Young collections are cheap: collect once enough objects have
+        // been allocated, but never less often than the non-generational
+        // policy would (on small heaps, a fixed young threshold lets
+        // medium-lived garbage pile up).  (long_lived_total is only updated
+        // by full collections; add what young collections promoted since,
+        // or a growing heap looks small.)
+        Py_ssize_t heap = gcstate->long_lived_total + gc_old_growth(gcstate);
+        Py_ssize_t full_trigger = Py_MAX(threshold, heap / GC_HEAP_DIVISOR);
+        Py_ssize_t young_trigger = Py_MAX(gcstate->young_trigger, GC_YOUNG_THRESHOLD);
+        return count > Py_MIN(young_trigger, full_trigger);
+    }
+    if (count < gcstate->long_lived_total / GC_HEAP_DIVISOR) {
         // Avoid quadratic behavior by scaling threshold to the number of live
         // objects.
         return false;
@@ -2065,6 +2521,42 @@ record_deallocation(PyThreadState *tstate)
     }
 }
 
+// An old object is freed outside of a collection.
+static void
+record_old_deallocation(PyThreadState *tstate)
+{
+    struct _gc_thread_state *gc = &((_PyThreadStateImpl *)tstate)->gc;
+    gc->old_freed++;
+    if (gc->old_freed >= LOCAL_ALLOC_COUNT_THRESHOLD) {
+        // Like the allocation count, the growth doesn't go below zero: a
+        // shrinking old generation doesn't postpone the next full collection.
+        GCState *gcstate = &tstate->interp->gc;
+        Py_ssize_t pending = _Py_atomic_load_ssize_relaxed(&gcstate->long_lived_pending);
+        Py_ssize_t new_pending;
+        do {
+            if (pending <= 0) {
+                break;
+            }
+            new_pending = Py_MAX(pending - gc->old_freed, 0);
+        } while (!_Py_atomic_compare_exchange_ssize(&gcstate->long_lived_pending,
+                                                    &pending, new_pending));
+        gc->old_freed = 0;
+    }
+}
+
+// With generational collection, collections of generation 0 (automatic ones
+// and gc.collect(0)) are young collections, unless the old generation grew
+// enough since the last full collection.
+static bool
+gc_is_young_collection(GCState *gcstate, int generation, _PyGC_Reason reason)
+{
+    return (gc_generational_enabled() && generation == 0 &&
+            reason != _Py_GC_REASON_SHUTDOWN &&
+            !gcstate->freeze_active &&
+            (reason == _Py_GC_REASON_MANUAL ||
+             gc_old_growth(gcstate) < gcstate->long_lived_total / GC_HEAP_DIVISOR));
+}
+
 static void
 gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, int generation)
 {
@@ -2107,9 +2599,10 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     // doing this extra work.  Doing this pass also defeats one of the
     // purposes of using freeze: avoiding writes to objects that are frozen.
     // So, we just skip this if gc.freeze() was used.
-    if (!state->gcstate->freeze_active) {
+    if (!state->gcstate->freeze_active && !state->young) {
         // Mark objects reachable from known roots as "alive".  These will
-        // be ignored for rest of the GC pass.
+        // be ignored for rest of the GC pass.  (Not in young collections:
+        // it would traverse the old objects too.)
         int err = gc_mark_alive_from_roots(interp, state);
         if (err < 0) {
             _PyEval_StartTheWorld(interp);
@@ -2140,6 +2633,30 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
         }
     }
 
+    if (gc_generational_enabled()) {
+        gc_move_pages(state);
+        if (state->young) {
+            // The objects that became old since the last full collection.
+            _Py_atomic_add_ssize(&state->gcstate->long_lived_pending, state->aged);
+            // Adapt how often young collections run to what they find.
+            GCState *gs = state->gcstate;
+            int trigger = Py_MAX(gs->young_trigger, GC_YOUNG_THRESHOLD);
+            if (state->candidates == 0) {
+                // nothing to learn from
+            }
+            else if (state->aged * 100 >= state->candidates * GC_YOUNG_SURVIVAL_HIGH) {
+                trigger = Py_MIN(trigger * 2, GC_YOUNG_THRESHOLD_MAX);
+            }
+            else if (state->aged * 100 < state->candidates * GC_YOUNG_SURVIVAL_LOW) {
+                trigger = Py_MAX(trigger / 2, GC_YOUNG_THRESHOLD);
+            }
+            gs->young_trigger = trigger;
+        }
+        else {
+            _Py_atomic_store_ssize_relaxed(&state->gcstate->long_lived_pending, 0);
+        }
+    }
+
     // Find weakref callbacks we will honor (but do not call them).
     find_weakref_callbacks(state);
     _PyEval_StartTheWorld(interp);
@@ -2160,8 +2677,11 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     if (err == 0) {
         clear_weakrefs(state);
     }
-    // Record the number of live GC objects
-    interp->gc.long_lived_total = state->long_lived_total;
+    // Record the number of live GC objects (a young collection only saw
+    // the young ones)
+    if (!state->young) {
+        interp->gc.long_lived_total = state->long_lived_total;
+    }
     _PyEval_StartTheWorld(interp);
 
 
@@ -2227,6 +2747,14 @@ gc_collect_main(PyThreadState *tstate, int generation, _PyGC_Reason reason)
 
     assert(generation >= 0 && generation < NUM_GENERATIONS);
 
+    bool young = gc_is_young_collection(gcstate, generation, reason);
+    if (gc_generational_enabled() && generation == 0 && !young) {
+        // A collection of generation 0 that turns into a full collection is
+        // reported (to gc.callbacks, the stats and the debug output) as one
+        // of the oldest generation.
+        generation = NUM_GENERATIONS - 1;
+    }
+
 #ifdef Py_STATS
     PyStats *s = _PyStats_GET();
     if (s) {
@@ -2256,9 +2784,13 @@ gc_collect_main(PyThreadState *tstate, int generation, _PyGC_Reason reason)
         .interp = interp,
         .gcstate = gcstate,
         .reason = reason,
+        .young = young,
     };
 
     gc_collect_internal(interp, &state, generation);
+    // (Only left over when the collection failed before moving pages.)
+    PyMem_RawFree(state.promote.pages);
+    PyMem_RawFree(state.demote.pages);
 
     m = state.collected;
     n = state.uncollectable;
@@ -2834,7 +3366,11 @@ PyObject_GC_Del(void *op)
 #endif
     }
 
-    record_deallocation(_PyThreadState_GET());
+    PyThreadState *tstate = _PyThreadState_GET();
+    record_deallocation(tstate);
+    if (gc_has_bit((PyObject *)op, _PyGC_BITS_OLD)) {
+        record_old_deallocation(tstate);
+    }
     PyObject_Free(((char *)op)-presize);
 }
 

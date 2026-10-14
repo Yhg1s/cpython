@@ -2075,7 +2075,9 @@ Objects/unicodeobject.o: $(srcdir)/Objects/unicodeobject.c $(UNICODE_DEPS)
 Objects/dictobject.o: $(srcdir)/Objects/stringlib/eq.h
 Objects/setobject.o: $(srcdir)/Objects/stringlib/eq.h
 
-Objects/obmalloc.o: $(srcdir)/Objects/mimalloc/alloc.c \
+Objects/obmalloc.o: $(srcdir)/Objects/mimalloc/static.c \
+		$(srcdir)/Objects/mimalloc/alloc.c \
+		$(srcdir)/Objects/mimalloc/alloc-override.c \
 		$(srcdir)/Objects/mimalloc/alloc-aligned.c \
 		$(srcdir)/Objects/mimalloc/alloc-posix.c \
 		$(srcdir)/Objects/mimalloc/arena.c \
@@ -2085,16 +2087,16 @@ Objects/obmalloc.o: $(srcdir)/Objects/mimalloc/alloc.c \
 		$(srcdir)/Objects/mimalloc/options.c \
 		$(srcdir)/Objects/mimalloc/os.c \
 		$(srcdir)/Objects/mimalloc/page.c \
+		$(srcdir)/Objects/mimalloc/page-queue.c \
 		$(srcdir)/Objects/mimalloc/random.c \
 		$(srcdir)/Objects/mimalloc/segment.c \
 		$(srcdir)/Objects/mimalloc/segment-map.c \
 		$(srcdir)/Objects/mimalloc/stats.c \
 		$(srcdir)/Objects/mimalloc/prim/prim.c \
 		$(srcdir)/Objects/mimalloc/prim/osx/prim.c \
+		$(srcdir)/Objects/mimalloc/prim/osx/alloc-override-zone.c \
 		$(srcdir)/Objects/mimalloc/prim/unix/prim.c \
 		$(srcdir)/Objects/mimalloc/prim/wasi/prim.c
-
-Objects/mimalloc/page.o: $(srcdir)/Objects/mimalloc/page-queue.c
 
 
 # Regenerate various files from Python/bytecodes.c

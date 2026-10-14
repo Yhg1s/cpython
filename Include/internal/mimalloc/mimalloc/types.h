@@ -339,6 +339,7 @@ typedef struct mi_page_s {
   uint8_t               is_zero_init : 1;  // `true` if the page was initially zero initialized
   uint8_t               use_qsbr : 1;      // delay page freeing using qsbr
   uint8_t               tag : 4;           // tag from the owning heap
+  uint8_t               gc_survived : 1;   // CPython GC: survived a young collection
   uint8_t               debug_offset;      // number of bytes to preserve when filling freed or uninitialized memory
 
   // layout like this to optimize access in `mi_malloc` and `mi_free`

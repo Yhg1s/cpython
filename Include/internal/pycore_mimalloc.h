@@ -14,6 +14,11 @@ typedef enum {
     _Py_MIMALLOC_HEAP_OBJECT = 1,   // non-GC objects
     _Py_MIMALLOC_HEAP_GC = 2,       // GC objects without pre-header
     _Py_MIMALLOC_HEAP_GC_PRE = 3,   // GC objects with pre-header
+    // Newly allocated GC objects go to the "young" heaps.  The collector
+    // moves pages that survive a collection to the heaps above, so a young
+    // collection only needs to visit the pages of these two.
+    _Py_MIMALLOC_HEAP_GC_YOUNG = 4,
+    _Py_MIMALLOC_HEAP_GC_PRE_YOUNG = 5,
     _Py_MIMALLOC_HEAP_COUNT
 } _Py_mimalloc_heap_id;
 

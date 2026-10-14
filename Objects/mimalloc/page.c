@@ -689,6 +689,7 @@ static void mi_page_init(mi_heap_t* heap, mi_page_t* page, size_t block_size, mi
   page->tag = heap->tag;
   page->use_qsbr = heap->page_use_qsbr;
   page->debug_offset = heap->debug_offset;
+  page->gc_survived = 0;
   page->xblock_size = (block_size < MI_HUGE_BLOCK_SIZE ? (uint32_t)block_size : MI_HUGE_BLOCK_SIZE); // initialize before _mi_segment_page_start
   size_t page_size;
   const void* page_start = _mi_segment_page_start(segment, page, &page_size);

@@ -20,6 +20,9 @@ extern "C" {
 struct _gc_thread_state {
     /* Thread-local allocation count. */
     Py_ssize_t alloc_count;
+    /* Old objects (generational GC) freed by this thread, not yet
+       subtracted from the interpreter's count of new old objects. */
+    Py_ssize_t old_freed;
 };
 #endif
 

@@ -810,6 +810,77 @@ _PyMem_GetAllocatorName(const char *name, PyMemAllocatorName *allocator)
 }
 
 
+#ifdef Py_GIL_DISABLED
+// Freelists keep freed objects of one thread for reuse by the same thread.
+// An object freed by a thread other than the one whose heap holds its memory
+// (a cross-thread decref, or the GC helping to free garbage) would move to
+// the freeing thread: its memory is then reused by that thread while it
+// stays on the other thread's pages.  With generational GC, an object freed
+// from an old page would also come back as a new object on an old page,
+// which young collections treat as old.  With PYTHON_GC_GENERATIONAL=1,
+// freelists only keep objects whose memory belongs to the current thread's
+// heaps and isn't on old GC pages.  Only checked when all domains use
+// mimalloc.
+int _PyMem_freelist_check = -1;    // -1: not determined yet
+
+static int
+freelist_check_enabled(void)
+{
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *env = getenv("PYTHON_GC_GENERATIONAL");
+        enabled = env != NULL && atoi(env) > 0;
+    }
+    return enabled;
+}
+
+static void
+update_freelist_check(void)
+{
+    PyMemAllocatorEx *raw = &_PyMem_Raw, *mem = &_PyMem, *obj = &_PyObject;
+    if (_PyRuntime.allocators.is_debug_enabled) {
+        raw = &_PyMem_Debug.raw.alloc;
+        mem = &_PyMem_Debug.mem.alloc;
+        obj = &_PyMem_Debug.obj.alloc;
+    }
+    int mimalloc = (raw->malloc == _PyMem_MiRawMalloc &&
+                    mem->malloc == _PyMem_MiMalloc &&
+                    obj->malloc == _PyObject_MiMalloc);
+    _PyMem_freelist_check = mimalloc ? freelist_check_enabled() : 0;
+}
+
+int
+_PyMem_FreelistAccepts(void *p)
+{
+    if (_PyMem_freelist_check < 0) {
+        // The default allocators are set up statically, not through
+        // set_allocator_unlocked(); the first push happens during startup.
+        update_freelist_check();
+        if (_PyMem_freelist_check == 0) {
+            return 1;
+        }
+    }
+    // Compare the page's heap with this thread's heaps; don't dereference
+    // it (the heaps of an exiting thread are freed with its thread state).
+    _PyThreadStateImpl *tstate = (_PyThreadStateImpl *)_PyThreadState_GET();
+    if (tstate == NULL) {
+        return 0;
+    }
+    mi_page_t *page = _mi_ptr_page(p);
+    mi_heap_t *heap = mi_page_heap(page);
+    mi_heap_t *heaps = tstate->mimalloc.heaps;
+    if (heap < &heaps[0] || heap >= &heaps[_Py_MIMALLOC_HEAP_COUNT]) {
+        return 0;
+    }
+    if (page->tag == _Py_MIMALLOC_HEAP_GC ||
+        page->tag == _Py_MIMALLOC_HEAP_GC_PRE)
+    {
+        return 0;
+    }
+    return 1;
+}
+#endif
+
 static int
 set_up_allocators_unlocked(PyMemAllocatorName allocator)
 {
@@ -1088,6 +1159,9 @@ set_up_debug_hooks_unlocked(void)
     set_up_debug_hooks_domain_unlocked(PYMEM_DOMAIN_MEM);
     set_up_debug_hooks_domain_unlocked(PYMEM_DOMAIN_OBJ);
     _PyRuntime.allocators.is_debug_enabled = 1;
+#ifdef Py_GIL_DISABLED
+    update_freelist_check();
+#endif
 }
 
 void
@@ -1126,6 +1200,9 @@ set_allocator_unlocked(PyMemAllocatorDomain domain, PyMemAllocatorEx *allocator)
     case PYMEM_DOMAIN_OBJ: _PyObject = *allocator; break;
     /* ignore unknown domain */
     }
+#ifdef Py_GIL_DISABLED
+    update_freelist_check();
+#endif
 }
 
 void

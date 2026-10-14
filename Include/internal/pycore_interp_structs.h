@@ -267,6 +267,10 @@ struct _gc_runtime_state {
     Py_ssize_t long_lived_pending;
 
 #ifdef Py_GIL_DISABLED
+    /* Generational collection: new objects between young collections; it
+       adapts to how much garbage they find. */
+    int young_trigger;
+
     /* True if gc.freeze() has been used. */
     int freeze_active;
 #else

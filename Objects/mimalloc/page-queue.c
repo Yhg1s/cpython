@@ -293,6 +293,22 @@ static void mi_page_queue_enqueue_from(mi_page_queue_t* to, mi_page_queue_t* fro
   mi_page_set_in_full(page, mi_page_queue_is_full(to));
 }
 
+// CPython: move one page to `to`, a heap of the same thread with the same
+// settings, setting its tag.  The owning thread must not be running.
+void _mi_page_move_to_heap(mi_page_t* page, mi_heap_t* to) {
+  mi_heap_t* from = mi_page_heap(page);
+  // (Not mi_heap_page_queue_of(): its assertion doesn't hold for huge pages,
+  // whose queue has a nominal block size.)
+  size_t bin = (mi_page_is_in_full(page) ? MI_BIN_FULL : mi_bin(page->xblock_size));
+  mi_page_queue_t* pq = &from->pages[bin];
+  bool in_full = mi_page_is_in_full(page);
+  mi_page_queue_remove(pq, page);
+  mi_page_set_heap(page, to);
+  page->tag = to->tag;
+  mi_page_set_in_full(page, in_full);
+  mi_page_queue_push(to, &to->pages[bin], page);
+}
+
 // Only called from `mi_heap_absorb`.
 size_t _mi_page_queue_append(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_queue_t* append) {
   mi_assert_internal(mi_heap_contains_queue(heap,pq));

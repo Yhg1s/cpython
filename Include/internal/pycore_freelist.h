@@ -49,9 +49,20 @@ _Py_freelists_GET(void)
 
 #define _Py_FREELIST_SIZE(NAME) (int)((_Py_freelists_GET()->NAME).size)
 
+#ifdef Py_GIL_DISABLED
+// See Objects/obmalloc.c.
+PyAPI_DATA(int) _PyMem_freelist_check;
+PyAPI_FUNC(int) _PyMem_FreelistAccepts(void *obj);
+#endif
+
 static inline int
 _PyFreeList_Push(struct _Py_freelist *fl, void *obj, Py_ssize_t maxsize)
 {
+#ifdef Py_GIL_DISABLED
+    if (_PyMem_freelist_check && !_PyMem_FreelistAccepts(obj)) {
+        return 0;
+    }
+#endif
     if (fl->size < maxsize && fl->size >= 0) {
         FT_ATOMIC_STORE_PTR_RELAXED(*(void **)obj, fl->freelist);
         fl->freelist = obj;

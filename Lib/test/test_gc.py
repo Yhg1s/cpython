@@ -1692,6 +1692,91 @@ class GCTogglingTests(unittest.TestCase):
         self.assertEqual(i, 50001)
 
 
+class GenerationalCollectionTests(unittest.TestCase):
+    # Young collections of the free-threaded build's generational mode
+    # (PYTHON_GC_GENERATIONAL=1).  Elsewhere the variable is ignored and
+    # these check the same behaviour of gc.collect(0).
+
+    def run_generational(self, code):
+        return assert_python_ok("-c", code, PYTHON_GC_GENERATIONAL="1")
+
+    def test_borrowed_reference_on_suspended_generator(self):
+        # A suspended generator's frame can hold a reference to a local on
+        # its stack that isn't counted in the object's refcount
+        # (LOAD_FAST_BORROW across a yield).  A young collection that
+        # subtracts it treats the live object as garbage.
+        code = textwrap.dedent("""
+            import gc, weakref
+
+            class X:
+                dels = 0
+                def __del__(self):
+                    X.dels += 1
+
+            def gen(x):
+                me = yield
+                r = (x, (yield))
+                return r
+
+            callbacks = []
+            gc.collect()
+            keep = []
+            refs = []
+            gc.collect(0)
+            gc.collect()
+            for i in range(1000):
+                x = X()
+                g = gen(x)
+                next(g)
+                g.send(g)       # the generator refers to itself
+                keep.append(x)
+                refs.append(weakref.ref(x, callbacks.append))
+                del g, x
+                if i % 100 == 99:
+                    gc.collect(0)
+            assert X.dels == 0, X.dels
+            assert not callbacks, len(callbacks)
+            assert all(r() is not None for r in refs)
+        """)
+        self.run_generational(code)
+
+    def test_borrowed_reference_and_resurrection(self):
+        # As above, with generators that resurrect themselves when
+        # finalized: the live objects they refer to must not be cleared.
+        code = textwrap.dedent("""
+            import gc, sys
+            sys.unraisablehook = lambda *args: None
+            saved = []
+
+            def gen(x):
+                me = yield
+                while True:
+                    try:
+                        r = (x, (yield))
+                    except GeneratorExit:
+                        saved.append(me)
+
+            gc.collect()
+            keep = []
+            gc.collect(0)
+            gc.collect()
+            for i in range(1000):
+                x = [i, "payload"]
+                g = gen(x)
+                next(g)
+                g.send(g)
+                keep.append(x)
+                del g, x
+                if i % 100 == 99:
+                    gc.collect(0)
+                    saved.clear()
+                    gc.collect(0)
+            bad = [i for i, x in enumerate(keep) if x != [i, "payload"]]
+            assert not bad, (len(bad), keep[bad[0]])
+        """)
+        self.run_generational(code)
+
+
 class PythonFinalizationTests(unittest.TestCase):
     def test_ast_fini(self):
         # bpo-44184: Regression test for subtype_dealloc() when deallocating

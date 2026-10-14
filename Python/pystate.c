@@ -3299,6 +3299,8 @@ tstate_mimalloc_bind(PyThreadState *tstate)
         [_Py_MIMALLOC_HEAP_OBJECT] = base_offset,
         [_Py_MIMALLOC_HEAP_GC] = base_offset,
         [_Py_MIMALLOC_HEAP_GC_PRE] = base_offset + 2 * sizeof(PyObject *),
+        [_Py_MIMALLOC_HEAP_GC_YOUNG] = base_offset,
+        [_Py_MIMALLOC_HEAP_GC_PRE_YOUNG] = base_offset + 2 * sizeof(PyObject *),
     };
 
     // Initialize each heap
@@ -3312,6 +3314,8 @@ tstate_mimalloc_bind(PyThreadState *tstate)
     mts->heaps[_Py_MIMALLOC_HEAP_OBJECT].page_use_qsbr = true;
     mts->heaps[_Py_MIMALLOC_HEAP_GC].page_use_qsbr = true;
     mts->heaps[_Py_MIMALLOC_HEAP_GC_PRE].page_use_qsbr = true;
+    mts->heaps[_Py_MIMALLOC_HEAP_GC_YOUNG].page_use_qsbr = true;
+    mts->heaps[_Py_MIMALLOC_HEAP_GC_PRE_YOUNG].page_use_qsbr = true;
 
     // By default, object allocations use _Py_MIMALLOC_HEAP_OBJECT.
     // _PyObject_GC_New() and similar functions temporarily override this to
