@@ -70,21 +70,13 @@ decref_merged_objects(_PyObjectStack *stack)
     }
 }
 
-// Enqueue an object to be merged by the owning thread. This steals a
-// reference to the object.
-void
-_Py_brc_queue_object(PyObject *ob)
+// Enqueue `ob` (whose ob_tid is `ob_tid`) and, while the bucket lock is
+// held, any objects in `more` owned by the same thread (moved entries are
+// set to NULL).  Steals a reference to each enqueued object.
+static void
+queue_objects(PyInterpreterState *interp, PyObject *ob, uintptr_t ob_tid,
+              _PyObjectStack *more)
 {
-    PyInterpreterState *interp = _PyInterpreterState_GET();
-
-    uintptr_t ob_tid = _Py_atomic_load_uintptr(&ob->ob_tid);
-    if (ob_tid == 0) {
-        // The owning thread may have concurrently decided to merge the
-        // refcount fields.
-        Py_DECREF(ob);
-        return;
-    }
-
     struct _brc_bucket *bucket = get_bucket(interp, ob_tid);
     PyMutex_Lock(&bucket->mutex);
     _PyThreadStateImpl *tstate = find_thread_state(bucket, ob_tid);
@@ -115,6 +107,20 @@ _Py_brc_queue_object(PyObject *ob)
         return;
     }
 
+    if (more != NULL) {
+        for (_PyObjectStackChunk *buf = more->head; buf != NULL; buf = buf->prev) {
+            for (Py_ssize_t i = 0; i < buf->n; i++) {
+                PyObject *other = buf->objs[i];
+                if (other != NULL &&
+                    _Py_atomic_load_uintptr(&other->ob_tid) == ob_tid &&
+                    _PyObjectStack_Push(&tstate->brc.objects_to_merge, other) == 0)
+                {
+                    buf->objs[i] = NULL;
+                }
+            }
+        }
+    }
+
     if (_PyThreadState_TrySuspendDetached(&tstate->base)) {
         // The owning thread is detached (e.g. blocked on a lock or in a
         // system call) and may not run Python code again for a long time,
@@ -135,6 +141,63 @@ _Py_brc_queue_object(PyObject *ob)
     _Py_set_eval_breaker_bit(&tstate->base, _PY_EVAL_EXPLICIT_MERGE_BIT);
 
     PyMutex_Unlock(&bucket->mutex);
+}
+
+// Enqueue an object to be merged by the owning thread. This steals a
+// reference to the object.
+void
+_Py_brc_queue_object(PyObject *ob)
+{
+    PyInterpreterState *interp = _PyInterpreterState_GET();
+
+    uintptr_t ob_tid = _Py_atomic_load_uintptr(&ob->ob_tid);
+    if (ob_tid == 0) {
+        // The owning thread may have concurrently decided to merge the
+        // refcount fields.
+        Py_DECREF(ob);
+        return;
+    }
+
+    _PyThreadStateImpl *self = (_PyThreadStateImpl *)_PyThreadState_GET();
+    if (self != NULL && self->brc.defer_depth > 0 &&
+        _PyObjectStack_Push(&self->brc.deferred, ob) == 0)
+    {
+        return;
+    }
+
+    queue_objects(interp, ob, ob_tid, NULL);
+}
+
+void
+_Py_brc_begin_deferred(PyThreadState *tstate)
+{
+    ((_PyThreadStateImpl *)tstate)->brc.defer_depth++;
+}
+
+void
+_Py_brc_end_deferred(PyThreadState *tstate)
+{
+    _PyThreadStateImpl *self = (_PyThreadStateImpl *)tstate;
+    assert(self->brc.defer_depth > 0);
+    if (--self->brc.defer_depth > 0) {
+        return;
+    }
+    // Hand the objects over, taking each owner's bucket lock once.  Take
+    // the stack first: queue_objects() may run destructors that queue more.
+    _PyObjectStack pending = {0};
+    _PyObjectStack_Merge(&pending, &self->brc.deferred);
+    while (pending.head != NULL) {
+        PyObject *ob = _PyObjectStack_Pop(&pending);
+        if (ob == NULL) {
+            continue;  // moved by an earlier queue_objects() call
+        }
+        uintptr_t ob_tid = _Py_atomic_load_uintptr(&ob->ob_tid);
+        if (ob_tid == 0) {
+            Py_DECREF(ob);
+            continue;
+        }
+        queue_objects(tstate->interp, ob, ob_tid, &pending);
+    }
 }
 
 static void
@@ -228,6 +291,7 @@ _Py_brc_remove_thread(PyThreadState *tstate)
 
     assert(brc->local_objects_to_merge.head == NULL);
     assert(brc->objects_to_merge.head == NULL);
+    assert(brc->defer_depth == 0 && brc->deferred.head == NULL);
 }
 
 void

@@ -31,6 +31,10 @@
 // include Python stacks as set of known roots
 #define GC_MARK_ALIVE_STACKS 1
 
+// Experimental: record how long each phase of a collection takes and print
+// it to stderr when the PYTHON_GC_PHASE_TRACE environment variable is set.
+// #define GC_PHASE_TRACE 1     // (off: compile-time only)
+
 
 #ifdef Py_GIL_DISABLED
 
@@ -72,6 +76,96 @@ struct gc_page_list {
     Py_ssize_t n, cap;
 };
 
+#ifdef GC_PHASE_TRACE
+enum gc_phase {
+    GC_PHASE_STW1_WAIT,     // waiting for other threads to stop
+    GC_PHASE_MERGE,         // merge per-thread and queued refcounts
+    GC_PHASE_DELAYED,       // process QSBR delayed frees
+    GC_PHASE_TRIM_PENDING,  // free empty heap pages (deferred from last collection)
+    GC_PHASE_MARK_ALIVE,    // mark objects reachable from roots
+    GC_PHASE_UPDATE_REFS,   // heap walk: compute gc_refs
+    GC_PHASE_MARK_HEAP,     // heap walk: propagate reachability
+    GC_PHASE_SCAN_HEAP,     // heap walk: collect unreachable, restore ob_tid
+    GC_PHASE_WEAKREFS,      // find weakref callbacks
+    GC_PHASE_FINALIZE,      // world running: callbacks and finalizers
+    GC_PHASE_STW2_WAIT,
+    GC_PHASE_RESURRECT,     // handle resurrected objects, clear weakrefs
+    GC_PHASE_DELETE,        // world running: tp_clear and deallocation
+    GC_PHASE_TRIM,          // stop the world and free empty heap pages
+    GC_PHASE_PURGE,         // world running: return freed segments to the OS
+    GC_PHASE_COUNT
+};
+
+static const char *gc_phase_names[GC_PHASE_COUNT] = {
+    "stw1_wait", "merge", "delayed", "trim_pending", "mark_alive", "update_refs",
+    "mark_heap", "scan_heap", "weakrefs", "finalize", "stw2_wait",
+    "resurrect", "delete", "trim", "purge",
+};
+#endif
+
+// A chunked array of objects (here: the garbage of a collection, split into
+// chunks that threads help free, see "GC assist").
+#define GC_OBJ_CHUNK_SIZE 1024
+
+struct gc_obj_chunk {
+    struct gc_obj_chunk *next;
+    Py_ssize_t n;
+    PyObject *items[GC_OBJ_CHUNK_SIZE];
+};
+
+struct gc_obj_array {
+    struct gc_obj_chunk *head;
+    struct gc_obj_chunk *tail;
+    // Set if a chunk allocation failed; the array is then incomplete and
+    // the collector falls back to walking the heaps.
+    bool failed;
+};
+
+#define GC_OBJ_ARRAY_FOR_EACH(arr, chunk, i, op) \
+    for ((chunk) = (arr)->head; (chunk) != NULL; (chunk) = (chunk)->next) \
+        for ((i) = 0; (i) < (chunk)->n && ((op) = (chunk)->items[(i)], 1); (i)++)
+
+static void
+gc_obj_array_push(struct gc_obj_array *arr, PyObject *op)
+{
+    struct gc_obj_chunk *tail = arr->tail;
+    if (tail == NULL || tail->n == GC_OBJ_CHUNK_SIZE) {
+        if (arr->failed) {
+            return;
+        }
+        // Must not use mimalloc-managed heaps being walked; see
+        // _PyObjectStackChunk_New().
+        struct gc_obj_chunk *chunk = PyMem_RawMalloc(sizeof(*chunk));
+        if (chunk == NULL) {
+            arr->failed = true;
+            return;
+        }
+        chunk->next = NULL;
+        chunk->n = 0;
+        if (tail == NULL) {
+            arr->head = chunk;
+        }
+        else {
+            tail->next = chunk;
+        }
+        arr->tail = tail = chunk;
+    }
+    tail->items[tail->n++] = op;
+}
+
+static void
+gc_obj_array_clear(struct gc_obj_array *arr)
+{
+    struct gc_obj_chunk *chunk = arr->head;
+    while (chunk != NULL) {
+        struct gc_obj_chunk *next = chunk->next;
+        PyMem_RawFree(chunk);
+        chunk = next;
+    }
+    arr->head = arr->tail = NULL;
+    arr->failed = false;
+}
+
 // Per-collection state
 struct collection_state {
     struct visitor_args base;
@@ -109,7 +203,66 @@ struct collection_state {
     Py_ssize_t scan_page_garbage;
     struct gc_page_list promote, demote;
     Py_ssize_t promote_live, demote_live;
+    // The unreachable objects in scan order, recorded by scan_object().
+    // Used instead of the `unreachable` worklist to free the garbage when no
+    // object can be resurrected (see delete_garbage_parallel()).
+    struct gc_obj_array garbage;
+    // Set by scan_object() if an unreachable object is a weakref or
+    // has weakrefs, or has a finalizer that hasn't run yet.  If neither is
+    // set, no unreachable object can be resurrected.
+    bool has_weakrefs;
+    bool has_finalizers;
+    // Number of objects collected by other threads (see gc_assist_delete).
+    Py_ssize_t assisted;
+#ifdef GC_PHASE_TRACE
+    PyTime_t phase_last;
+    PyTime_t phase_ns[GC_PHASE_COUNT];
+#endif
 };
+
+#ifdef GC_PHASE_TRACE
+// Charge the time since the previous call to `phase`.
+static void
+gc_phase_done(struct collection_state *state, enum gc_phase phase)
+{
+    PyTime_t now;
+    (void)PyTime_PerfCounterRaw(&now);
+    state->phase_ns[phase] += now - state->phase_last;
+    state->phase_last = now;
+}
+
+static void
+gc_phase_report(struct collection_state *state)
+{
+    static int enabled = -1;
+    if (enabled < 0) {
+        enabled = getenv("PYTHON_GC_PHASE_TRACE") != NULL;
+    }
+    if (!enabled) {
+        return;
+    }
+    PyTime_t *ns = state->phase_ns;
+    PyTime_t stw1 = 0, stw2 = 0;
+    for (int i = GC_PHASE_STW1_WAIT; i <= GC_PHASE_WEAKREFS; i++) {
+        stw1 += ns[i];
+    }
+    stw2 = ns[GC_PHASE_STW2_WAIT] + ns[GC_PHASE_RESURRECT];
+    char buf[1024];
+    int len = snprintf(buf, sizeof(buf),
+                       "gcphase candidates=%zd collected=%zd assisted=%zd "
+                       "live=%zd stw1=%.3f stw2=%.3f",
+                       state->candidates, state->collected, state->assisted,
+                       state->long_lived_total, stw1 / 1e6, stw2 / 1e6);
+    for (int i = 0; i < GC_PHASE_COUNT && len < (int)sizeof(buf); i++) {
+        len += snprintf(buf + len, sizeof(buf) - len, " %s=%.3f",
+                        gc_phase_names[i], ns[i] / 1e6);
+    }
+    fprintf(stderr, "%s\n", buf);
+}
+#  define GC_PHASE_DONE(state, phase) gc_phase_done((state), (phase))
+#else
+#  define GC_PHASE_DONE(state, phase) ((void)0)
+#endif
 
 // iterate over a worklist
 #define WORKSTACK_FOR_EACH(stack, op) \
@@ -1283,6 +1436,16 @@ scan_object(PyObject *op, struct collection_state *state)
         // (Garbage found by a full collection: its deallocation is not an
         // old object dying on its own.)
         gc_clear_bit(op, _PyGC_BITS_OLD);
+        PyTypeObject *tp = Py_TYPE(op);
+        if (tp->tp_finalize != NULL && !_PyGC_FINALIZED(op)) {
+            state->has_finalizers = true;
+        }
+        if (PyWeakref_Check(op) ||
+            (_PyType_SUPPORTS_WEAKREFS(tp) &&
+             *_PyObject_GET_WEAKREFS_LISTPTR_FROM_OFFSET(op) != NULL))
+        {
+            state->has_weakrefs = true;
+        }
 
         // Disable deferred refcounting for unreachable objects so that they
         // are collected immediately after finalization.
@@ -1302,6 +1465,7 @@ scan_object(PyObject *op, struct collection_state *state)
             if (state->scan_page != NULL && _mi_ptr_page(op) == state->scan_page) {
                 state->scan_page_garbage++;
             }
+            gc_obj_array_push(&state->garbage, op);
         }
         // It is possible this object will be resurrected but
         // for now we assume it will be deallocated.
@@ -1871,6 +2035,7 @@ deduce_unreachable_heap(PyInterpreterState *interp,
     // by computing the difference between the refcount and the number of
     // incoming references.
     gc_visit_heaps(interp, &update_refs, &state->base);
+    GC_PHASE_DONE(state, GC_PHASE_UPDATE_REFS);
 
 #ifdef GC_DEBUG
     // Check that all objects are marked as unreachable and that the computed
@@ -1888,11 +2053,13 @@ deduce_unreachable_heap(PyInterpreterState *interp,
         gc_visit_heaps(interp, &restore_refs, &state->base);
         return -1;
     }
+    GC_PHASE_DONE(state, GC_PHASE_MARK_HEAP);
 
     // Identify remaining unreachable objects and push them onto a stack.
     // Restores ob_tid for reachable objects.
     gc_visit_heaps(interp, &scan_heap_visitor, &state->base);
     gc_scan_page_done(state);
+    GC_PHASE_DONE(state, GC_PHASE_SCAN_HEAP);
 
     if (state->legacy_finalizers.head) {
         // There may be objects reachable from legacy finalizers that are in
@@ -2148,6 +2315,164 @@ finalize_garbage(struct collection_state *state)
     }
 }
 
+// Garbage that other threads can help free.  While the collector is freeing
+// a large amount of garbage, threads that allocate GC objects are asked (at
+// their next eval breaker check) to free a chunk of it.  Without this, a
+// single collecting thread can fall behind threads that create cyclic
+// garbage, and the amount of garbage per collection grows without bound.
+struct gc_delete_work {
+    struct gc_obj_chunk *chunks;    // unclaimed chunks
+    Py_ssize_t in_flight;           // claimed chunks not yet finished
+    Py_ssize_t collected;
+    PyEvent done;                   // set when in_flight drops to zero
+};
+
+// Clear and release the objects in a chunk of unreachable objects.  Returns
+// the number of objects collected.
+static Py_ssize_t
+delete_garbage_chunk(PyThreadState *tstate, struct gc_obj_chunk *chunk)
+{
+    Py_ssize_t collected = 0;
+    // Garbage often references objects owned by other threads (e.g. ints in
+    // a list); batch the resulting biased refcount queueing.
+    _Py_brc_begin_deferred(tstate);
+    // The memory of most garbage belongs to other threads' heaps; batch
+    // those frees too.
+    _mi_free_batch_begin();
+    for (Py_ssize_t i = 0; i < chunk->n; i++) {
+        PyObject *op = chunk->items[i];
+        if (!(_Py_atomic_load_uint8_relaxed(&op->ob_gc_bits) & _PyGC_BITS_UNREACHABLE)) {
+            // Moved to the legacy finalizers list, which owns it.
+            continue;
+        }
+        // Unlink from the unreachable worklist, if it is still linked.
+        // Other threads freeing garbage may read ob_tid concurrently (in
+        // Py_DECREF), as with worklist_pop().
+        _Py_atomic_store_uintptr_relaxed(&op->ob_tid, 0);
+        _PyObject_CLEAR_GC_BITS(op, _PyGC_BITS_UNREACHABLE);
+        if (_PyObject_GC_IS_TRACKED(op)) {
+            collected++;
+            inquiry clear = Py_TYPE(op)->tp_clear;
+            if (clear != NULL) {
+                (void) clear(op);
+                if (_PyErr_Occurred(tstate)) {
+                    PyErr_FormatUnraisable("Exception ignored in tp_clear of %s",
+                                           Py_TYPE(op)->tp_name);
+                }
+            }
+        }
+        Py_DECREF(op);  // drop the reference from the worklist
+    }
+    _mi_free_batch_end();
+    _Py_brc_end_deferred(tstate);
+    return collected;
+}
+
+// Claim and free one chunk of the current collection's garbage, if any.
+static void
+gc_assist_delete(PyThreadState *tstate)
+{
+    GCState *gcstate = &tstate->interp->gc;
+    PyMutex_Lock(&gcstate->delete_mutex);
+    struct gc_delete_work *work = gcstate->delete_work;
+    struct gc_obj_chunk *chunk = NULL;
+    if (work != NULL && work->chunks != NULL) {
+        chunk = work->chunks;
+        work->chunks = chunk->next;
+        work->in_flight++;
+    }
+    PyMutex_Unlock(&gcstate->delete_mutex);
+    if (chunk == NULL) {
+        return;
+    }
+
+    Py_ssize_t collected = delete_garbage_chunk(tstate, chunk);
+    PyMem_RawFree(chunk);
+
+    PyMutex_Lock(&gcstate->delete_mutex);
+    work->collected += collected;
+    if (--work->in_flight == 0 && work->chunks == NULL) {
+        _PyEvent_Notify(&work->done);
+    }
+    // The collector may free `work` as soon as the mutex is released.
+    PyMutex_Unlock(&gcstate->delete_mutex);
+}
+
+// Free the unreachable objects with help from other threads.  Returns false
+// if the objects could not be split into chunks, in which case the caller
+// frees any objects left on the worklist.
+static bool
+delete_garbage_parallel(PyThreadState *tstate, struct collection_state *state)
+{
+    GCState *gcstate = state->gcstate;
+    struct gc_delete_work work = {0};
+    struct gc_obj_array arr = {0};
+    PyObject *op;
+    if (state->garbage.head != NULL && !state->garbage.failed) {
+        // Use the array recorded during the heap scan rather than following
+        // the worklist, which would leave other threads with no chunks to
+        // help with until we reached its end.
+        arr = state->garbage;
+        state->garbage = (struct gc_obj_array){0};
+        state->unreachable.head = 0;
+    }
+    gc_obj_array_clear(&state->garbage);
+    while ((op = worklist_pop(&state->unreachable)) != NULL) {
+        gc_obj_array_push(&arr, op);
+        if (arr.failed) {
+            // Out of memory: put it back and free everything serially.
+            worklist_push(&state->unreachable, op);
+            for (struct gc_obj_chunk *c = arr.head; c != NULL; c = c->next) {
+                state->collected += delete_garbage_chunk(tstate, c);
+            }
+            gc_obj_array_clear(&arr);
+            return false;
+        }
+    }
+    if (arr.head == NULL) {
+        return true;
+    }
+    if (arr.head->next == NULL) {
+        // A single chunk isn't worth sharing.
+        state->collected += delete_garbage_chunk(tstate, arr.head);
+        gc_obj_array_clear(&arr);
+        return true;
+    }
+
+    work.chunks = arr.head;
+    PyMutex_Lock(&gcstate->delete_mutex);
+    _Py_atomic_store_ptr_release(&gcstate->delete_work, &work);
+    PyMutex_Unlock(&gcstate->delete_mutex);
+
+    // Free chunks until there are none left to claim.
+    for (;;) {
+        PyMutex_Lock(&gcstate->delete_mutex);
+        struct gc_obj_chunk *chunk = work.chunks;
+        if (chunk == NULL) {
+            _Py_atomic_store_ptr_release(&gcstate->delete_work, NULL);
+            bool wait = work.in_flight > 0;
+            PyMutex_Unlock(&gcstate->delete_mutex);
+            if (wait) {
+                // Wait for other threads to finish their chunks.
+                PyEvent_Wait(&work.done);
+            }
+            break;
+        }
+        work.chunks = chunk->next;
+        PyMutex_Unlock(&gcstate->delete_mutex);
+
+        state->collected += delete_garbage_chunk(tstate, chunk);
+        PyMem_RawFree(chunk);
+    }
+
+    // Synchronize with the last helper's update of `work`.
+    PyMutex_Lock(&gcstate->delete_mutex);
+    state->collected += work.collected;
+    state->assisted = work.collected;
+    PyMutex_Unlock(&gcstate->delete_mutex);
+    return true;
+}
+
 // Break reference cycles by clearing the containers involved.
 static void
 delete_garbage(struct collection_state *state)
@@ -2160,6 +2485,14 @@ delete_garbage(struct collection_state *state)
     PyObject *op;
     while ((op = worklist_pop(&state->objs_to_decref)) != NULL) {
         Py_DECREF(op);
+    }
+
+    if (!(gcstate->debug & _PyGC_DEBUG_SAVEALL) &&
+        state->reason != _Py_GC_REASON_SHUTDOWN)
+    {
+        if (delete_garbage_parallel(tstate, state)) {
+            return;
+        }
     }
 
     while ((op = worklist_pop(&state->unreachable)) != NULL) {
@@ -2493,6 +2826,10 @@ record_allocation(PyThreadState *tstate)
         {
             _Py_ScheduleGC(tstate);
         }
+        else if (_Py_atomic_load_ptr_relaxed(&gcstate->delete_work) != NULL) {
+            // Help free the garbage of the collection in progress.
+            _Py_ScheduleGC(tstate);
+        }
     }
 }
 
@@ -2557,10 +2894,42 @@ gc_is_young_collection(GCState *gcstate, int generation, _PyGC_Reason reason)
              gc_old_growth(gcstate) < gcstate->long_lived_total / GC_HEAP_DIVISOR));
 }
 
+// After freeing a lot of garbage, return the empty heap pages of all threads
+// so the memory can be reused elsewhere or released to the OS: after
+// explicit gc.collect() calls.
+static int
+gc_should_trim(struct collection_state *state)
+{
+    if (state->reason != _Py_GC_REASON_MANUAL) {
+        return 0;
+    }
+    // Only when this collection freed enough, or enough threads have exited
+    // (leaving abandoned segments) since the last trim, to be worth it:
+    // programs (and test suites) that call gc.collect() in a loop shouldn't
+    // pay for a trim every time.
+    static size_t abandoned_at_last_trim = 0;
+    size_t abandoned = mi_atomic_load_relaxed(
+        &state->interp->mimalloc.abandoned_pool.abandoned_count);
+    if (state->collected >= 10000 ||
+        abandoned >= abandoned_at_last_trim + 8)
+    {
+        abandoned_at_last_trim = abandoned;
+        return 1;
+    }
+    if (abandoned < abandoned_at_last_trim) {
+        abandoned_at_last_trim = abandoned;
+    }
+    return 0;
+}
+
 static void
 gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, int generation)
 {
+#ifdef GC_PHASE_TRACE
+    (void)PyTime_PerfCounterRaw(&state->phase_last);
+#endif
     _PyEval_StopTheWorld(interp);
+    GC_PHASE_DONE(state, GC_PHASE_STW1_WAIT);
 
     // update collection and allocation counters
     if (generation+1 < NUM_GENERATIONS) {
@@ -2589,8 +2958,22 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
         merge_queued_objects(tstate, state);
     }
     _Py_FOR_EACH_TSTATE_END(interp);
+    GC_PHASE_DONE(state, GC_PHASE_MERGE);
 
     process_delayed_frees(interp, state);
+    GC_PHASE_DONE(state, GC_PHASE_DELAYED);
+
+    // The previous collection freed a lot of memory, mostly on behalf of
+    // other threads.  Return the pages that became empty.  This collects the
+    // blocks other threads freed, which the heap walk below would otherwise
+    // have to do.
+    bool trimmed = false;
+    if (state->gcstate->trim_pending) {
+        state->gcstate->trim_pending = 0;
+        _PyMem_TrimHeaps(interp, 0);
+        trimmed = true;
+    }
+    GC_PHASE_DONE(state, GC_PHASE_TRIM_PENDING);
 
     #ifdef GC_ENABLE_MARK_ALIVE
     // If gc.freeze() was used, it seems likely that doing this "mark alive"
@@ -2611,6 +2994,7 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
         }
     }
     #endif
+    GC_PHASE_DONE(state, GC_PHASE_MARK_ALIVE);
 
     // Find unreachable objects
     int err = deduce_unreachable_heap(interp, state);
@@ -2658,49 +3042,96 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     }
 
     // Find weakref callbacks we will honor (but do not call them).
-    find_weakref_callbacks(state);
+    if (state->has_weakrefs) {
+        find_weakref_callbacks(state);
+    }
+    GC_PHASE_DONE(state, GC_PHASE_WEAKREFS);
+
+    // Unreachable objects can only be resurrected by running their
+    // finalizers or weakref callbacks, or through a weakref to them (which
+    // other threads may call once the world is restarted).  If there are
+    // none of those, finish up in this pause and skip the second one.
+    bool may_resurrect = state->has_weakrefs || state->has_finalizers;
+    if (may_resurrect) {
+        // Objects removed from the worklist as resurrected could be freed
+        // before delete_garbage() runs, so the array can't be used.
+        gc_obj_array_clear(&state->garbage);
+    }
+    else {
+        _PyGC_ClearAllFreeLists(interp);
+        // Record the number of live GC objects (a young collection only
+        // saw the young ones)
+        if (!state->young) {
+            interp->gc.long_lived_total = state->long_lived_total;
+        }
+    }
     _PyEval_StartTheWorld(interp);
+    (void)trimmed;
 
     // Deallocate any object from the refcount merge step
     cleanup_worklist(&state->objs_to_decref);
 
-    // Call weakref callbacks and finalizers after unpausing other threads to
-    // avoid potential deadlocks.
-    call_weakref_callbacks(state);
-    finalize_garbage(state);
+    if (may_resurrect) {
+        // Call weakref callbacks and finalizers after unpausing other
+        // threads to avoid potential deadlocks.
+        call_weakref_callbacks(state);
+        finalize_garbage(state);
+        GC_PHASE_DONE(state, GC_PHASE_FINALIZE);
 
-    _PyEval_StopTheWorld(interp);
-    // Handle any objects that may have resurrected after the finalization.
-    err = handle_resurrected_objects(state);
-    // Clear free lists in all threads
-    _PyGC_ClearAllFreeLists(interp);
-    if (err == 0) {
-        clear_weakrefs(state);
+        _PyEval_StopTheWorld(interp);
+        GC_PHASE_DONE(state, GC_PHASE_STW2_WAIT);
+        // Handle any objects that may have resurrected after the finalization.
+        err = handle_resurrected_objects(state);
+        // Clear free lists in all threads
+        _PyGC_ClearAllFreeLists(interp);
+        if (err == 0) {
+            clear_weakrefs(state);
+        }
+        // Record the number of live GC objects (a young collection only
+        // saw the young ones)
+        if (!state->young) {
+            interp->gc.long_lived_total = state->long_lived_total;
+        }
+        GC_PHASE_DONE(state, GC_PHASE_RESURRECT);
+        _PyEval_StartTheWorld(interp);
+
+        if (err < 0) {
+            cleanup_worklist(&state->unreachable);
+            cleanup_worklist(&state->legacy_finalizers);
+            cleanup_worklist(&state->wrcb_to_call);
+            cleanup_worklist(&state->objs_to_decref);
+            PyErr_NoMemory();
+            return;
+        }
     }
-    // Record the number of live GC objects (a young collection only saw
-    // the young ones)
-    if (!state->young) {
-        interp->gc.long_lived_total = state->long_lived_total;
-    }
-    _PyEval_StartTheWorld(interp);
-
-
-    if (err < 0) {
-        cleanup_worklist(&state->unreachable);
-        cleanup_worklist(&state->legacy_finalizers);
-        cleanup_worklist(&state->wrcb_to_call);
-        cleanup_worklist(&state->objs_to_decref);
-        PyErr_NoMemory();
-        return;
+    else {
+        GC_PHASE_DONE(state, GC_PHASE_FINALIZE);
     }
 
     // Call tp_clear on objects in the unreachable set. This will cause
     // the reference cycles to be broken. It may also cause some objects
     // to be freed.
     delete_garbage(state);
+    GC_PHASE_DONE(state, GC_PHASE_DELETE);
 
     // Append objects with legacy finalizers to the "gc.garbage" list.
     handle_legacy_finalizers(state);
+
+    if (gc_should_trim(state)) {
+        if (state->reason == _Py_GC_REASON_MANUAL) {
+            // An explicit gc.collect(): return the memory now.
+            _PyEval_StopTheWorld(interp);
+            _PyMem_TrimHeaps(interp, 1);
+            _PyEval_StartTheWorld(interp);
+            GC_PHASE_DONE(state, GC_PHASE_TRIM);
+            _PyMem_TrimArenas();
+            GC_PHASE_DONE(state, GC_PHASE_PURGE);
+        }
+        else {
+            // Avoid another pause: trim at the start of the next collection.
+            state->gcstate->trim_pending = 1;
+        }
+    }
 }
 
 static struct gc_generation_stats *
@@ -2791,9 +3222,13 @@ gc_collect_main(PyThreadState *tstate, int generation, _PyGC_Reason reason)
     // (Only left over when the collection failed before moving pages.)
     PyMem_RawFree(state.promote.pages);
     PyMem_RawFree(state.demote.pages);
+    gc_obj_array_clear(&state.garbage);
 
     m = state.collected;
     n = state.uncollectable;
+#ifdef GC_PHASE_TRACE
+    gc_phase_report(&state);
+#endif
 
     (void)PyTime_PerfCounterRaw(&stop);
     double duration = PyTime_AsSecondsDouble(stop - start);
@@ -3248,6 +3683,11 @@ _PyObject_GC_Link(PyObject *op)
 void
 _Py_RunGC(PyThreadState *tstate)
 {
+    GCState *gcstate = &tstate->interp->gc;
+    if (_Py_atomic_load_ptr_relaxed(&gcstate->delete_work) != NULL) {
+        gc_assist_delete(tstate);
+        return;
+    }
     if (!PyGC_IsEnabled()) {
         return;
     }

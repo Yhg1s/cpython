@@ -126,6 +126,14 @@ extern void _PyMem_ProcessDelayedNoDealloc(PyThreadState *tstate,
 // interpreter's queue.
 extern void _PyMem_AbandonDelayed(PyThreadState *tstate);
 
+#ifdef Py_GIL_DISABLED
+// Free the empty mimalloc pages of every thread in the interpreter, so the
+// memory can be reused by other threads, and if `purge` is true, return it
+// to the OS now.  Must be called with the world stopped.
+extern void _PyMem_TrimHeaps(PyInterpreterState *interp, int purge);
+extern void _PyMem_TrimArenas(void);
+#endif
+
 // On interpreter shutdown, frees all delayed free requests.
 extern void _PyMem_FiniDelayed(PyInterpreterState *interp);
 

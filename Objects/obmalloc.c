@@ -158,6 +158,90 @@ tstate_from_heap(mi_heap_t *heap)
 {
     return _Py_CONTAINER_OF(heap->tld, _PyThreadStateImpl, mimalloc.tld);
 }
+
+// Blocks freed by other threads, and pages that became empty as a result,
+// are normally only reclaimed when the owning thread next needs memory, and
+// empty pages protected by QSBR only when the owner allocates *and* someone
+// has advanced the QSBR write sequence.  A thread that stops allocating
+// after its objects were freed elsewhere (e.g. by the cyclic GC) can hold on
+// to that memory indefinitely.  While the world is stopped, every other
+// thread is quiescent, so we can collect all heaps on their behalf and free
+// their empty pages.
+void
+_PyMem_TrimHeaps(PyInterpreterState *interp, int purge)
+{
+    assert(interp->stoptheworld.world_stopped);
+    _PyThreadStateImpl *current = (_PyThreadStateImpl *)_PyThreadState_GET();
+
+    // Collect blocks freed by other threads and retire empty pages.  Empty
+    // pages of heaps that use QSBR are put on their owner's page_list.
+    HEAD_LOCK(&_PyRuntime);
+    _Py_FOR_EACH_TSTATE_UNLOCKED(interp, p) {
+        struct _mimalloc_thread_state *m = &((_PyThreadStateImpl *)p)->mimalloc;
+        if (!_Py_atomic_load_int(&m->initialized)) {
+            continue;
+        }
+        for (int i = 0; i < _Py_MIMALLOC_HEAP_COUNT; i++) {
+            // Not mi_heap_collect(): it would also collect the abandoned
+            // segments, once per heap; that is done once below.
+            _mi_heap_collect_pages(&m->heaps[i]);
+        }
+    }
+
+    // Other threads are stopped, so after advancing the write sequence
+    // every QSBR goal is reached.
+    uint64_t goal = _Py_qsbr_advance(&interp->qsbr);
+    _Py_qsbr_quiescent_state(current->qsbr);
+    bool reached = _Py_qsbr_poll(current->qsbr, goal);
+    assert(reached);
+
+    _Py_FOR_EACH_TSTATE_UNLOCKED(interp, p) {
+        struct _mimalloc_thread_state *m = &((_PyThreadStateImpl *)p)->mimalloc;
+        if (!_Py_atomic_load_int(&m->initialized)) {
+            // A thread that is starting may still be initializing its
+            // mimalloc state (it isn't stopped until it attaches).
+            continue;
+        }
+        struct llist_node *head = &m->page_list;
+        struct llist_node *node;
+        llist_for_each_safe(node, head) {
+            mi_page_t *page = llist_data(node, mi_page_t, qsbr_node);
+            if (!reached || !_Py_qbsr_goal_reached(current->qsbr, page->qsbr_goal)) {
+                continue;
+            }
+            _PyMem_mi_page_clear_qsbr(page);
+            if (mi_page_all_free(page)) {
+                _mi_page_free(page, mi_page_queue_of(page), false);
+            }
+        }
+    }
+
+    // Return the memory of the freed pages to the OS.  Otherwise mimalloc
+    // does this after a delay, when the owning thread next uses the segment.
+    if (purge) {
+        _Py_FOR_EACH_TSTATE_UNLOCKED(interp, p) {
+            struct _mimalloc_thread_state *m = &((_PyThreadStateImpl *)p)->mimalloc;
+            if (_Py_atomic_load_int(&m->initialized)) {
+                _mi_segments_tld_purge(&m->tld.segments);
+            }
+        }
+    }
+    HEAD_UNLOCK(&_PyRuntime);
+
+    // Free abandoned segments (from threads that have exited) that are now
+    // empty, and purge unused parts of the others.
+    mi_heap_t *heap = &current->mimalloc.heaps[_Py_MIMALLOC_HEAP_MEM];
+    _mi_abandoned_collect(heap, purge, &heap->tld->segments);
+}
+
+// Return memory of segments freed by _PyMem_TrimHeaps() to the OS.  Unlike
+// that function, this may be called while other threads are running.
+void
+_PyMem_TrimArenas(void)
+{
+    _PyThreadStateImpl *tstate = (_PyThreadStateImpl *)_PyThreadState_GET();
+    _mi_arena_collect(true, &tstate->mimalloc.tld.stats);
+}
 #endif
 
 static bool

@@ -273,6 +273,12 @@ struct _gc_runtime_state {
 
     /* True if gc.freeze() has been used. */
     int freeze_active;
+    /* Garbage from the current collection that other threads can help
+       free, or NULL.  Protected by delete_mutex. */
+    struct gc_delete_work *delete_work;
+    PyMutex delete_mutex;
+    /* True if the next collection should free empty heap pages first. */
+    int trim_pending;
 #else
     PyGC_Head *generation0;
 #endif

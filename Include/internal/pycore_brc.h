@@ -47,6 +47,12 @@ struct _brc_thread_state {
 
     // Local stack of objects to be merged (not accessed by other threads)
     _PyObjectStack local_objects_to_merge;
+
+    // While `defer_depth` > 0, objects this thread queues for other threads
+    // are collected in `deferred` and handed over by _Py_brc_flush_deferred()
+    // (not accessed by other threads).
+    int defer_depth;
+    _PyObjectStack deferred;
 };
 
 // Initialize/finalize the per-thread biased reference counting state
@@ -64,6 +70,12 @@ void _Py_brc_queue_object(PyObject *ob);
 
 // Merge the refcounts of queued objects for the current thread.
 void _Py_brc_merge_refcounts(PyThreadState *tstate);
+
+// Batch the objects the current thread queues for other threads, e.g. while
+// the GC frees garbage owned by other threads, so that each owner's bucket
+// lock is taken once per batch instead of once per object.
+void _Py_brc_begin_deferred(PyThreadState *tstate);
+void _Py_brc_end_deferred(PyThreadState *tstate);
 
 #endif /* Py_GIL_DISABLED */
 
