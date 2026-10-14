@@ -715,6 +715,10 @@ PyOS_BeforeFork(void)
 
     _PyImport_AcquireLock(interp);
     _PyEval_StopTheWorldAll(&_PyRuntime);
+#ifdef Py_GIL_DISABLED
+    // Don't fork with the parallel GC's helper threads running.
+    _PyGC_StopParallelHelpers();
+#endif
     HEAD_LOCK(&_PyRuntime);
 }
 

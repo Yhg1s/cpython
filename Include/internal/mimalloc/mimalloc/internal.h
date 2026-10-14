@@ -136,6 +136,8 @@ void       _mi_abandoned_collect(mi_heap_t* heap, bool force, mi_segments_tld_t*
 void       _mi_heap_collect_pages(mi_heap_t* heap);
 void       _mi_segments_tld_purge(mi_segments_tld_t* tld);
 void       _mi_free_batch_begin(void);
+size_t     _mi_heap_collect_page_list(mi_heap_t* heap, mi_page_t** pages, size_t cap);
+bool       _mi_pages_visit_blocks(mi_page_t** pages, size_t n, mi_block_visit_fun* visitor, void* arg);
 void       _mi_free_batch_end(void);
 
 // "page.c"

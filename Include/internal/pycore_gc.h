@@ -332,6 +332,16 @@ extern PyObject *_PyGC_GetReferrers(PyInterpreterState *interp, PyObject *objs);
 extern void _PyGC_ClearAllFreeLists(PyInterpreterState *interp);
 extern void _Py_RunGC(PyThreadState *tstate);
 
+#ifdef Py_GIL_DISABLED
+// Stop the helper threads of the parallel collector (restarted on demand).
+extern void _PyGC_StopParallelHelpers(void);
+
+// Cooperative parallel collection: threads suspended for the collector's
+// stop-the-world pause run its passes (gc_free_threading.c).
+extern void _PyGC_CoopRegister(PyThreadState *tstate, PyThreadState *requester);
+extern void _PyGC_CoopHelp(PyThreadState *tstate);
+#endif
+
 union _PyStackRef;
 
 // GC visit callback for tracked interpreter frames

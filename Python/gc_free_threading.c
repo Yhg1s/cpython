@@ -191,6 +191,11 @@ struct collection_state {
     bool has_finalizers;
     // Number of objects collected by other threads (see gc_assist_delete).
     Py_ssize_t assisted;
+    // Number of threads (including this one) used for the parallel passes of
+    // this collection, or 0 for a serial collection.
+    int parallel;
+    // Set if the parallel heap walk already initialized the refs.
+    bool refs_initialized;
 #ifdef GC_PHASE_TRACE
     PyTime_t phase_last;
     PyTime_t phase_ns[GC_PHASE_COUNT];
@@ -227,8 +232,9 @@ gc_phase_report(struct collection_state *state)
     char buf[1024];
     int len = snprintf(buf, sizeof(buf),
                        "gcphase candidates=%zd collected=%zd assisted=%zd "
-                       "live=%zd stw1=%.3f stw2=%.3f",
+                       "threads=%d live=%zd stw1=%.3f stw2=%.3f",
                        state->candidates, state->collected, state->assisted,
+                       state->parallel,
                        state->long_lived_total, stw1 / 1e6, stw2 / 1e6);
     for (int i = 0; i < GC_PHASE_COUNT && len < (int)sizeof(buf); i++) {
         len += snprintf(buf + len, sizeof(buf) - len, " %s=%.3f",
@@ -293,6 +299,14 @@ static inline int
 gc_has_bit(PyObject *op, uint8_t bit)
 {
     return (op->ob_gc_bits & bit) != 0;
+}
+
+// For reading another object's bits while other threads may modify them
+// (parallel passes).
+static inline int
+gc_has_bit_relaxed(PyObject *op, uint8_t bit)
+{
+    return (_Py_atomic_load_uint8_relaxed(&op->ob_gc_bits) & bit) != 0;
 }
 
 static inline void
@@ -391,7 +405,11 @@ merge_refcount(PyObject *op, Py_ssize_t extra)
     refcount += extra;
 
 #ifdef Py_REF_DEBUG
-    _Py_AddRefTotal(_PyThreadState_GET(), extra);
+    // (Skipped for extra == 0: parallel GC passes restore ob_tid on several
+    // threads that share the collecting thread's thread state.)
+    if (extra != 0) {
+        _Py_AddRefTotal(_PyThreadState_GET(), extra);
+    }
 #endif
 
     // No atomics necessary; all other threads in this interpreter are paused.
@@ -1154,7 +1172,9 @@ update_refs(const mi_heap_t *heap, const mi_heap_area_t *area,
     // Marked objects count as candidates, immortals don't:
     state->candidates++;
     gc_obj_array_push(&state->objs, op);
-    if (gc_is_alive(op)) {
+    if (gc_is_alive(op) || state->parallel) {
+        // In a parallel collection, the rest is done by par_init_refs() and
+        // par_subtract_refs().
         return true;
     }
 
@@ -1626,6 +1646,1124 @@ gc_mark_alive_from_roots(PyInterpreterState *interp,
 #endif // GC_ENABLE_MARK_ALIVE
 
 
+// Parallel collection (experimental) ////////////////////////////////////////
+//
+// While the world is stopped, the other threads are idle.  With
+// PYTHON_GC_THREADS=N (N > 1), the most expensive passes of a large
+// collection run on N threads: this one and N-1 helper threads that are
+// started on first use.  The helpers are native threads without a thread
+// state of their own; while they run a job they borrow the collecting
+// thread's (so _PyThreadState_GET() and _PyInterpreterState_GET() work in
+// tp_traverse), and they must not use anything that is private to a thread
+// state (freelists, the object stack freelist, PyMutex, refcount-debug
+// totals).  Objects whose processing needs those are handed back to the
+// collecting thread.
+//
+// The passes:
+//
+//   par_init_refs      per object: compute the refcount, untrack tuples,
+//                      set UNREACHABLE and ob_tid = refcount.  Writes only
+//                      to the object itself.
+//   par_subtract_refs  per object: tp_traverse, atomically decrementing
+//                      ob_tid of referents with UNREACHABLE set.  Only
+//                      reads the referents' bits (set by the previous pass).
+//   par_mark           objects with ob_tid > 0 are reachable: clear
+//                      UNREACHABLE on everything reachable from them.  An
+//                      object is traversed by the thread whose atomic clear
+//                      of the bit succeeded.
+//   par_scan           per object: restore ob_tid, or merge the refcount of
+//                      an unreachable object and add it to a per-thread
+//                      worklist; the worklists are concatenated afterwards.
+//
+// Work is handed out in chunks of the object array (1024 objects) through an
+// atomic counter.
+
+#if defined(HAVE_PTHREAD_H) && !defined(Py_GIL_DISABLED_NO_PARALLEL_GC)
+#  include <pthread.h>
+#  define GC_PARALLEL 1
+#endif
+
+#ifndef GC_PARALLEL
+void
+_PyGC_CoopRegister(PyThreadState *Py_UNUSED(tstate), PyThreadState *Py_UNUSED(requester))
+{
+}
+
+void
+_PyGC_CoopHelp(PyThreadState *Py_UNUSED(tstate))
+{
+}
+
+#define gc_coop_close()
+#endif
+
+#ifdef GC_PARALLEL
+
+#define GC_PAR_MAX_THREADS 64
+
+typedef void (*gc_par_fn)(int worker, void *arg);
+
+static struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t start;
+    pthread_cond_t done;
+    int nhelpers;           // helper threads running
+    bool stopping;          // helpers should exit
+    pthread_t threads[GC_PAR_MAX_THREADS];
+    pid_t pid;              // process that started them (fork check)
+    uint64_t generation;    // incremented for every job
+    int remaining;          // helpers still running the current job
+    gc_par_fn fn;
+    void *arg;
+    PyThreadState *tstate;  // borrowed by helpers during a job
+    PyInterpreterState *interp;
+    // Cooperative mode (PYTHON_GC_COOP=1): instead of helper threads,
+    // application threads that suspend for the collector's first
+    // stop-the-world pause run the passes.
+    int coop_open;          // suspending threads should register (atomic)
+    PyThreadState *coop_collector;  // the thread that opened it
+    bool coop_frozen;       // the set of registered threads is final
+    int coop_registered;    // threads registered for this pause
+} gc_pool = {
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
+    .start = PTHREAD_COND_INITIALIZER,
+    .done = PTHREAD_COND_INITIALIZER,
+};
+
+struct gc_pool_helper_args {
+    int worker;
+    uint64_t generation;    // job generation when the helper was started
+};
+
+static void *
+gc_pool_helper(void *arg)
+{
+    struct gc_pool_helper_args *a = arg;
+    int worker = a->worker;
+    // Jobs posted after the helper was started but before it got here must
+    // not be missed, so start from the generation at creation time.
+    uint64_t seen = a->generation;
+    free(a);
+    pthread_mutex_lock(&gc_pool.mutex);
+    for (;;) {
+        while (gc_pool.generation == seen && !gc_pool.stopping) {
+            pthread_cond_wait(&gc_pool.start, &gc_pool.mutex);
+        }
+        if (gc_pool.stopping) {
+            pthread_mutex_unlock(&gc_pool.mutex);
+            return NULL;
+        }
+        seen = gc_pool.generation;
+        gc_par_fn fn = gc_pool.fn;
+        void *fn_arg = gc_pool.arg;
+        pthread_mutex_unlock(&gc_pool.mutex);
+
+        _Py_tss_tstate = gc_pool.tstate;
+        _Py_tss_interp = gc_pool.interp;
+        fn(worker, fn_arg);
+        _Py_tss_tstate = NULL;
+        _Py_tss_interp = NULL;
+
+        pthread_mutex_lock(&gc_pool.mutex);
+        if (--gc_pool.remaining == 0) {
+            pthread_cond_signal(&gc_pool.done);
+        }
+    }
+}
+
+// This thread's worker number in the current pause (cooperative mode), or
+// 0, and the job generation when it registered.
+static _Thread_local int gc_coop_worker;
+static _Thread_local uint64_t gc_coop_seen;
+
+// Experiment knobs, read once at startup (_PyGC_Init).
+static int gc_par_configured;           // PYTHON_GC_THREADS
+static int gc_coop_configured;          // PYTHON_GC_COOP
+static Py_ssize_t gc_par_min_objects = 100000;  // PYTHON_GC_PARALLEL_MIN
+// PYTHON_GC_COOP_FREE=N: when the collector has garbage to free, ask every
+// thread to free up to N chunks of it at its next eval-breaker check
+// (0: only threads that allocate help, one chunk at a time).
+static int gc_coop_free;
+
+// Called by a thread that has just suspended itself for a stop-the-world
+// pause requested by `requester`, before it is counted as stopped: if the
+// pause is the collector's, the thread becomes one of its workers.  (The
+// collector may have to stop for somebody else's pause first, and so may
+// the other threads; nobody registers for those.)
+void
+_PyGC_CoopRegister(PyThreadState *tstate, PyThreadState *requester)
+{
+    if (!_Py_atomic_load_int_relaxed(&gc_pool.coop_open) || gc_coop_worker != 0) {
+        return;
+    }
+    pthread_mutex_lock(&gc_pool.mutex);
+    if (gc_pool.coop_open && !gc_pool.coop_frozen &&
+        requester != NULL && requester == gc_pool.coop_collector &&
+        gc_pool.interp == tstate->interp &&
+        gc_pool.coop_registered < GC_PAR_MAX_THREADS - 1)
+    {
+        gc_coop_worker = ++gc_pool.coop_registered;
+        gc_coop_seen = gc_pool.generation;
+    }
+    pthread_mutex_unlock(&gc_pool.mutex);
+}
+
+// Called by a suspended thread before it parks until the world restarts:
+// run the collector's passes until the collector closes the pause.
+void
+_PyGC_CoopHelp(PyThreadState *tstate)
+{
+    if (gc_coop_worker == 0) {
+        return;
+    }
+    int worker = gc_coop_worker;
+    pthread_mutex_lock(&gc_pool.mutex);
+    for (;;) {
+        while (gc_pool.generation == gc_coop_seen && gc_pool.coop_open) {
+            pthread_cond_wait(&gc_pool.start, &gc_pool.mutex);
+        }
+        if (gc_pool.generation == gc_coop_seen) {
+            break;      // closed
+        }
+        gc_coop_seen = gc_pool.generation;
+        gc_par_fn fn = gc_pool.fn;
+        void *fn_arg = gc_pool.arg;
+        pthread_mutex_unlock(&gc_pool.mutex);
+
+        // The thread is suspended (not attached), but it is the current
+        // thread state already (_PyThreadState_Attach() sets that before
+        // it waits), which tp_traverse functions may look up.
+        assert(_PyThreadState_GET() == tstate);
+        fn(worker, fn_arg);
+
+        pthread_mutex_lock(&gc_pool.mutex);
+        if (--gc_pool.remaining == 0) {
+            pthread_cond_signal(&gc_pool.done);
+        }
+    }
+    gc_coop_worker = 0;
+    if (--gc_pool.coop_registered == 0) {
+        pthread_cond_signal(&gc_pool.done);
+    }
+    pthread_mutex_unlock(&gc_pool.mutex);
+}
+
+// Before the collector stops the world: let threads that suspend register.
+static void
+gc_coop_open(PyInterpreterState *interp, struct collection_state *state)
+{
+    if (!gc_coop_configured || !_Py_IsMainInterpreter(interp) ||
+        state->reason == _Py_GC_REASON_SHUTDOWN ||
+        interp->gc.long_lived_total < gc_par_min_objects)
+    {
+        return;
+    }
+    pthread_mutex_lock(&gc_pool.mutex);
+    gc_pool.interp = interp;
+    gc_pool.coop_collector = _PyThreadState_GET();
+    gc_pool.coop_frozen = false;
+    gc_pool.coop_registered = 0;
+    _Py_atomic_store_int(&gc_pool.coop_open, 1);
+    pthread_mutex_unlock(&gc_pool.mutex);
+}
+
+// Before the collector restarts the world: release the registered threads
+// (they go on to wait for the restart like any suspended thread).
+static void
+gc_coop_close(void)
+{
+    if (!_Py_atomic_load_int_relaxed(&gc_pool.coop_open)) {
+        return;
+    }
+    pthread_mutex_lock(&gc_pool.mutex);
+    _Py_atomic_store_int(&gc_pool.coop_open, 0);
+    pthread_cond_broadcast(&gc_pool.start);
+    while (gc_pool.coop_registered > 0) {
+        pthread_cond_wait(&gc_pool.done, &gc_pool.mutex);
+    }
+    pthread_mutex_unlock(&gc_pool.mutex);
+}
+
+// Number of threads to use for this collection (0: serial).
+static int
+gc_par_threads(PyInterpreterState *interp, struct collection_state *state)
+{
+    int configured = gc_par_configured;
+    Py_ssize_t min_objects = gc_par_min_objects;
+    if (_Py_atomic_load_int_relaxed(&gc_pool.coop_open)) {
+        // The world is stopped: whoever registered is what there is.
+        pthread_mutex_lock(&gc_pool.mutex);
+        gc_pool.coop_frozen = true;
+        int n = gc_pool.coop_registered;
+        pthread_mutex_unlock(&gc_pool.mutex);
+        if (n == 0) {
+            gc_coop_close();
+            return 0;
+        }
+        return n + 1;
+    }
+    if (configured < 2 || gc_coop_configured || !_Py_IsMainInterpreter(interp) ||
+        state->reason == _Py_GC_REASON_SHUTDOWN ||
+        interp->gc.long_lived_total < min_objects)
+    {
+        return 0;
+    }
+    pthread_mutex_lock(&gc_pool.mutex);
+    if (gc_pool.pid != getpid()) {
+        // First use, or we are a forked child without the helpers.
+        gc_pool.nhelpers = 0;
+        gc_pool.pid = getpid();
+    }
+    while (gc_pool.nhelpers < configured - 1) {
+        struct gc_pool_helper_args *a = malloc(sizeof(*a));
+        if (a == NULL) {
+            break;
+        }
+        a->worker = gc_pool.nhelpers + 1;
+        a->generation = gc_pool.generation;
+        if (pthread_create(&gc_pool.threads[gc_pool.nhelpers], NULL,
+                           gc_pool_helper, a) != 0) {
+            free(a);
+            break;
+        }
+        gc_pool.nhelpers++;
+    }
+    int n = gc_pool.nhelpers + 1;
+    pthread_mutex_unlock(&gc_pool.mutex);
+    return n >= 2 ? n : 0;
+}
+
+// Stop and join the helper threads (they are restarted when needed), so
+// that fork() doesn't see them.  Called with the world stopped.
+void
+_PyGC_StopParallelHelpers(void)
+{
+    pthread_mutex_lock(&gc_pool.mutex);
+    if (gc_pool.pid != getpid() || gc_pool.nhelpers == 0) {
+        pthread_mutex_unlock(&gc_pool.mutex);
+        return;
+    }
+    int n = gc_pool.nhelpers;
+    gc_pool.stopping = true;
+    pthread_cond_broadcast(&gc_pool.start);
+    pthread_mutex_unlock(&gc_pool.mutex);
+    for (int i = 0; i < n; i++) {
+        pthread_join(gc_pool.threads[i], NULL);
+    }
+    pthread_mutex_lock(&gc_pool.mutex);
+    gc_pool.nhelpers = 0;
+    gc_pool.stopping = false;
+    pthread_mutex_unlock(&gc_pool.mutex);
+}
+
+// Run fn(worker, arg) on `nthreads` threads (worker 0 is this thread) and
+// wait for all of them.
+static void
+gc_par_run(int nthreads, gc_par_fn fn, void *arg)
+{
+    pthread_mutex_lock(&gc_pool.mutex);
+    assert(nthreads - 1 <= gc_pool.nhelpers + gc_pool.coop_registered);
+    gc_pool.fn = fn;
+    gc_pool.arg = arg;
+    gc_pool.tstate = _PyThreadState_GET();
+    gc_pool.interp = gc_pool.tstate->interp;
+    // Helpers beyond nthreads-1 would also wake up; we always use all.
+    gc_pool.remaining = gc_pool.coop_open ? gc_pool.coop_registered : gc_pool.nhelpers;
+    gc_pool.generation++;
+    pthread_cond_broadcast(&gc_pool.start);
+    pthread_mutex_unlock(&gc_pool.mutex);
+
+    fn(0, arg);
+
+    pthread_mutex_lock(&gc_pool.mutex);
+    while (gc_pool.remaining > 0) {
+        pthread_cond_wait(&gc_pool.done, &gc_pool.mutex);
+    }
+    pthread_mutex_unlock(&gc_pool.mutex);
+}
+
+static void
+par_collect_heap(int worker, void *arg)
+{
+    if (worker > 0) {
+        // Chunks this helper allocated (with PyMem_RawMalloc, from its own
+        // thread-local mimalloc heap) are freed later by the collector, so
+        // they sit on this heap's cross-thread free list, keeping their
+        // pages, until this thread collects them.
+        mi_collect(false);
+    }
+}
+
+// Return memory held by the helpers' own heaps; called when trimming.
+static void
+gc_pool_trim(void)
+{
+    pthread_mutex_lock(&gc_pool.mutex);
+    int n = gc_pool.pid == getpid() ? gc_pool.nhelpers : 0;
+    pthread_mutex_unlock(&gc_pool.mutex);
+    if (n > 0) {
+        gc_par_run(n + 1, par_collect_heap, NULL);
+    }
+}
+
+// A growable stack of objects using malloc() (usable without a thread state).
+struct gc_par_stack {
+    PyObject **items;
+    Py_ssize_t size;
+    Py_ssize_t capacity;
+    bool failed;
+};
+
+static void
+gc_par_stack_push(struct gc_par_stack *st, PyObject *op)
+{
+    if (st->size == st->capacity) {
+        Py_ssize_t cap = st->capacity ? st->capacity * 2 : 1024;
+        PyObject **items = realloc(st->items, cap * sizeof(PyObject *));
+        if (items == NULL) {
+            st->failed = true;
+            return;
+        }
+        st->items = items;
+        st->capacity = cap;
+    }
+    st->items[st->size++] = op;
+}
+
+static void
+gc_par_stack_free(struct gc_par_stack *st)
+{
+    free(st->items);
+    *st = (struct gc_par_stack){0};
+}
+
+// Per-worker results of the scan pass.
+struct gc_par_worker {
+    uintptr_t unreachable_head, unreachable_tail;
+    uintptr_t legacy_head, legacy_tail;
+    struct gc_obj_array garbage;
+    struct gc_par_stack serial;     // for the collecting thread
+    struct gc_par_stack tuples;     // reachable tuples to try to untrack
+    Py_ssize_t long_lived_delta;
+    Py_ssize_t merged;              // for Py_REF_DEBUG accounting
+    bool has_weakrefs;
+    bool has_finalizers;
+    bool failed;
+    char pad[64];
+};
+
+struct gc_par_job {
+    struct collection_state *state;
+    struct gc_obj_chunk **chunks;
+    Py_ssize_t nchunks;
+    Py_ssize_t next;                // next chunk to hand out (atomic)
+    struct gc_par_worker workers[GC_PAR_MAX_THREADS];
+};
+
+static struct gc_obj_chunk *
+par_next_chunk(struct gc_par_job *job)
+{
+    Py_ssize_t i = _Py_atomic_add_ssize(&job->next, 1);
+    return i < job->nchunks ? job->chunks[i] : NULL;
+}
+
+// First half of update_refs() for one object: store the refcount in ob_tid
+// and set UNREACHABLE.  Only writes to `op` itself.
+static inline void
+par_init_refs_object(PyObject *op)
+{
+    if (gc_is_alive(op)) {
+        return;
+    }
+    Py_ssize_t refcount = Py_REFCNT(op);
+    if (_PyObject_HasDeferredRefcount(op)) {
+        refcount -= _Py_REF_DEFERRED;
+    }
+    _PyObject_ASSERT(op, refcount >= 0);
+    // Tuples are not untracked here: that reads the elements' GC bits,
+    // which other threads may be writing.  par_scan() collects reachable
+    // tuples for the collecting thread to untrack afterwards.
+    assert(!gc_is_unreachable(op));
+    gc_set_unreachable(op);
+    op->ob_tid = (uintptr_t)refcount;
+}
+
+static void
+par_init_refs(int worker, void *arg)
+{
+    struct gc_par_job *job = arg;
+    struct gc_obj_chunk *chunk;
+    while ((chunk = par_next_chunk(job)) != NULL) {
+        for (Py_ssize_t i = 0; i < chunk->n; i++) {
+            par_init_refs_object(chunk->items[i]);
+        }
+    }
+}
+
+static int
+visit_decref_atomic(PyObject *op, void *arg)
+{
+    if (gc_is_unreachable(op)) {
+        _Py_atomic_add_uintptr(&op->ob_tid, (uintptr_t)-1);
+    }
+    return 0;
+}
+
+static void
+par_subtract_refs(int worker, void *arg)
+{
+    struct gc_par_job *job = arg;
+    struct gc_obj_chunk *chunk;
+    while ((chunk = par_next_chunk(job)) != NULL) {
+        for (Py_ssize_t i = 0; i < chunk->n; i++) {
+            PyObject *op = chunk->items[i];
+            if (gc_is_unreachable(op)) {
+                Py_TYPE(op)->tp_traverse(op, visit_decref_atomic, NULL);
+            }
+        }
+    }
+}
+
+// Atomically clear UNREACHABLE; return true if this call cleared it.
+static inline bool
+gc_claim_reachable(PyObject *op)
+{
+    if (!gc_has_bit_relaxed(op, _PyGC_BITS_UNREACHABLE)) {
+        return false;
+    }
+    uint8_t old = _Py_atomic_and_uint8(&op->ob_gc_bits,
+                                       (uint8_t)~_PyGC_BITS_UNREACHABLE);
+    return (old & _PyGC_BITS_UNREACHABLE) != 0;
+}
+
+static int
+visit_claim_reachable(PyObject *op, void *arg)
+{
+    if (gc_claim_reachable(op)) {
+        gc_par_stack_push((struct gc_par_stack *)arg, op);
+    }
+    return 0;
+}
+
+static void
+par_mark(int worker, void *arg)
+{
+    struct gc_par_job *job = arg;
+    struct collection_state *state = job->state;
+    struct gc_par_worker *w = &job->workers[worker];
+    struct gc_par_stack stack = {0};
+    struct gc_obj_chunk *chunk;
+    while ((chunk = par_next_chunk(job)) != NULL) {
+        for (Py_ssize_t i = 0; i < chunk->n; i++) {
+            PyObject *op = chunk->items[i];
+            if (!gc_has_bit_relaxed(op, _PyGC_BITS_UNREACHABLE)) {
+                continue;
+            }
+            int keep_alive = (state->skip_deferred_objects &&
+                              _PyObject_HasDeferredRefcount(op));
+            if (gc_get_refs(op) == 0 && !keep_alive) {
+                continue;
+            }
+            if (!gc_claim_reachable(op)) {
+                continue;   // another thread got there first
+            }
+            PyObject *cur = op;
+            do {
+                Py_TYPE(cur)->tp_traverse(cur, visit_claim_reachable, &stack);
+                cur = stack.size > 0 ? stack.items[--stack.size] : NULL;
+            } while (cur != NULL);
+            if (stack.failed) {
+                w->failed = true;
+            }
+        }
+    }
+    gc_par_stack_free(&stack);
+}
+
+static void
+par_worklist_push(uintptr_t *head, uintptr_t *tail, PyObject *op)
+{
+    assert(op->ob_tid == 0);
+    op->ob_tid = *head;
+    *head = (uintptr_t)op;
+    if (*tail == 0) {
+        *tail = (uintptr_t)op;
+    }
+}
+
+static void
+par_scan(int worker, void *arg)
+{
+    struct gc_par_job *job = arg;
+    struct gc_par_worker *w = &job->workers[worker];
+    struct gc_obj_chunk *chunk;
+    while ((chunk = par_next_chunk(job)) != NULL) {
+        for (Py_ssize_t i = 0; i < chunk->n; i++) {
+            PyObject *op = chunk->items[i];
+            if (!_PyObject_GC_IS_TRACKED(op) || gc_is_frozen(op)) {
+                continue;
+            }
+            if (!gc_is_unreachable(op)) {
+                gc_restore_tid(op);
+                gc_clear_alive(op);
+                if (PyTuple_CheckExact(op)) {
+                    gc_par_stack_push(&w->tuples, op);
+                }
+                continue;
+            }
+            // Deferred refcounting, generators and frames need locks or
+            // thread state to disable deferred references; leave them to
+            // the collecting thread.
+            if (_PyObject_HasDeferredRefcount(op) ||
+                PyGen_CheckExact(op) || PyCoro_CheckExact(op) ||
+                PyAsyncGen_CheckExact(op) || PyFrame_Check(op))
+            {
+                gc_par_stack_push(&w->serial, op);
+                if (w->serial.failed) {
+                    // Out of memory: keep it alive this time.
+                    w->serial.failed = false;
+                    gc_clear_unreachable(op);
+                    gc_restore_tid(op);
+                }
+                continue;
+            }
+            PyTypeObject *tp = Py_TYPE(op);
+            if (tp->tp_finalize != NULL && !_PyGC_FINALIZED(op)) {
+                w->has_finalizers = true;
+            }
+            if (PyWeakref_Check(op) ||
+                (_PyType_SUPPORTS_WEAKREFS(tp) &&
+                 *_PyObject_GET_WEAKREFS_LISTPTR_FROM_OFFSET(op) != NULL))
+            {
+                w->has_weakrefs = true;
+            }
+            // merge_refcount(op, 1) without the Py_REF_DEBUG accounting,
+            // which uses the (shared) thread state.
+            Py_ssize_t refcount = Py_REFCNT(op) + 1;
+            op->ob_tid = 0;
+            op->ob_ref_local = 0;
+            op->ob_ref_shared = _Py_REF_SHARED(refcount, _Py_REF_MERGED);
+            w->merged++;
+            if (has_legacy_finalizer(op)) {
+                gc_clear_unreachable(op);
+                par_worklist_push(&w->legacy_head, &w->legacy_tail, op);
+            }
+            else {
+                par_worklist_push(&w->unreachable_head, &w->unreachable_tail, op);
+                gc_obj_array_push(&w->garbage, op);
+            }
+            w->long_lived_delta--;
+        }
+    }
+}
+
+static void
+par_append_worklist(struct worklist *list, uintptr_t head, uintptr_t tail)
+{
+    if (head == 0) {
+        return;
+    }
+    ((PyObject *)tail)->ob_tid = list->head;
+    list->head = head;
+}
+
+static void
+par_append_array(struct gc_obj_array *dst, struct gc_obj_array *src)
+{
+    if (src->failed) {
+        dst->failed = true;
+    }
+    if (src->head == NULL) {
+        return;
+    }
+    if (dst->tail == NULL) {
+        dst->head = src->head;
+    }
+    else {
+        dst->tail->next = src->head;
+    }
+    dst->tail = src->tail;
+    *src = (struct gc_obj_array){0};
+}
+
+
+// Parallel heap walk: the first pass of a collection (update_refs(), which in
+// a parallel collection only records the candidates) over the pages of all
+// threads' GC heaps, split between threads.  Pages of abandoned segments
+// (from threads that exited) are visited serially afterwards.
+
+#define GC_WALK_PAGES 16    // pages per work item
+
+struct gc_walk_worker {
+    struct visitor_args base;       // must be first (see op_from_block)
+    Py_ssize_t long_lived_total;
+    Py_ssize_t candidates;
+    struct gc_obj_array objs;
+    bool failed;
+    char pad[64];
+};
+
+struct gc_walk_job {
+    mi_page_t **pages[2];           // GC and GC_PRE pages
+    Py_ssize_t npages[2];
+    Py_ssize_t offset[2];
+    Py_ssize_t nitems[2];           // work items per kind
+    Py_ssize_t next;                // next work item (atomic)
+    struct gc_walk_worker workers[GC_PAR_MAX_THREADS];
+};
+
+static bool
+walk_record_visitor(const mi_heap_t *heap, const mi_heap_area_t *area,
+                    void *block, size_t block_size, void *args)
+{
+    struct gc_walk_worker *w = (struct gc_walk_worker *)args;
+    PyObject *op = op_from_block_all_gc(block, args);
+    if (op == NULL) {
+        return true;
+    }
+    w->long_lived_total++;
+    if (!_PyObject_GC_IS_TRACKED(op) || gc_is_frozen(op)) {
+        return true;
+    }
+    if (_Py_IsImmortal(op)) {
+        op->ob_tid = 0;
+        _PyObject_GC_UNTRACK(op);
+        gc_clear_unreachable(op);
+        return true;
+    }
+    w->candidates++;
+    gc_obj_array_push(&w->objs, op);
+    if (w->objs.failed) {
+        w->failed = true;
+    }
+    // Do the per-object part of update_refs now, while the object is in
+    // the cache, rather than in another pass over all objects.
+    par_init_refs_object(op);
+    return true;
+}
+
+static void
+par_walk(int worker, void *arg)
+{
+    struct gc_walk_job *job = arg;
+    struct gc_walk_worker *w = &job->workers[worker];
+    for (;;) {
+        Py_ssize_t item = _Py_atomic_add_ssize(&job->next, 1);
+        int kind = 0;
+        if (item >= job->nitems[0]) {
+            item -= job->nitems[0];
+            kind = 1;
+            if (item >= job->nitems[1]) {
+                break;
+            }
+        }
+        Py_ssize_t start = item * GC_WALK_PAGES;
+        Py_ssize_t n = Py_MIN(GC_WALK_PAGES, job->npages[kind] - start);
+        w->base.offset = job->offset[kind];
+        _mi_pages_visit_blocks(&job->pages[kind][start], n,
+                               walk_record_visitor, w);
+    }
+}
+
+// Returns 0 on success, -1 if the serial walk should be used instead
+// (nothing has been modified in that case).
+static int
+gc_walk_parallel(PyInterpreterState *interp, struct collection_state *state)
+{
+    Py_ssize_t offset_base = 0;
+    if (_PyMem_DebugEnabled()) {
+        offset_base += 2 * sizeof(size_t);
+    }
+    Py_ssize_t offset_pre = offset_base + 2 * sizeof(PyObject*);
+
+    struct gc_walk_job *job = PyMem_RawCalloc(1, sizeof(*job));
+    if (job == NULL) {
+        return -1;
+    }
+    job->offset[0] = offset_base;
+    job->offset[1] = offset_pre;
+    int heaps[2] = {_Py_MIMALLOC_HEAP_GC, _Py_MIMALLOC_HEAP_GC_PRE};
+
+    HEAD_LOCK(&_PyRuntime);
+    // Count the pages, then collect them.
+    Py_ssize_t cap[2] = {0, 0};
+    _Py_FOR_EACH_TSTATE_UNLOCKED(interp, p) {
+        struct _mimalloc_thread_state *m = &((_PyThreadStateImpl *)p)->mimalloc;
+        if (!_Py_atomic_load_int(&m->initialized)) {
+            continue;
+        }
+        for (int k = 0; k < 2; k++) {
+            cap[k] += m->heaps[heaps[k]].page_count;
+        }
+    }
+    int err = 0;
+    for (int k = 0; k < 2 && err == 0; k++) {
+        job->pages[k] = PyMem_RawMalloc(Py_MAX(cap[k], 1) * sizeof(mi_page_t *));
+        if (job->pages[k] == NULL) {
+            err = -1;
+        }
+    }
+    if (err == 0) {
+        _Py_FOR_EACH_TSTATE_UNLOCKED(interp, p) {
+            struct _mimalloc_thread_state *m = &((_PyThreadStateImpl *)p)->mimalloc;
+            if (!_Py_atomic_load_int(&m->initialized)) {
+                continue;
+            }
+            for (int k = 0; k < 2; k++) {
+                size_t room = cap[k] - job->npages[k];
+                size_t n = _mi_heap_collect_page_list(
+                    &m->heaps[heaps[k]], &job->pages[k][job->npages[k]], room);
+                if (n > room) {
+                    err = -1;   // page_count was out of date; shouldn't happen
+                    n = room;
+                }
+                job->npages[k] += n;
+            }
+        }
+    }
+    HEAD_UNLOCK(&_PyRuntime);
+    if (err < 0) {
+        PyMem_RawFree(job->pages[0]);
+        PyMem_RawFree(job->pages[1]);
+        PyMem_RawFree(job);
+        return -1;
+    }
+
+    for (int k = 0; k < 2; k++) {
+        job->nitems[k] = (job->npages[k] + GC_WALK_PAGES - 1) / GC_WALK_PAGES;
+    }
+    gc_par_run(state->parallel, par_walk, job);
+
+    // Pages in the abandoned pool, serially (with worker 0's results).
+    struct gc_walk_worker *w0 = &job->workers[0];
+    mi_abandoned_pool_t *pool = &interp->mimalloc.abandoned_pool;
+    HEAD_LOCK(&_PyRuntime);
+    w0->base.offset = offset_base;
+    _mi_abandoned_pool_visit_blocks(pool, _Py_MIMALLOC_HEAP_GC, true,
+                                    walk_record_visitor, w0);
+    w0->base.offset = offset_pre;
+    _mi_abandoned_pool_visit_blocks(pool, _Py_MIMALLOC_HEAP_GC_PRE, true,
+                                    walk_record_visitor, w0);
+    HEAD_UNLOCK(&_PyRuntime);
+
+    state->refs_initialized = true;
+    for (int i = 0; i < state->parallel; i++) {
+        struct gc_walk_worker *w = &job->workers[i];
+        state->long_lived_total += w->long_lived_total;
+        state->candidates += w->candidates;
+        par_append_array(&state->objs, &w->objs);
+    }
+    PyMem_RawFree(job->pages[0]);
+    PyMem_RawFree(job->pages[1]);
+    PyMem_RawFree(job);
+    return 0;
+}
+
+// Runs a pass over all recorded objects on `nthreads` threads.
+static void
+par_pass(struct gc_par_job *job, int nthreads, gc_par_fn fn)
+{
+    job->next = 0;
+    gc_par_run(nthreads, fn, job);
+}
+
+// The parallel counterpart of the update_refs, mark and scan passes.
+// Returns -1 on memory errors (with the heap in the state the serial code
+// expects on failure: refs computed, nothing scanned), 1 if the serial path
+// must be used instead, 0 on success.
+static int
+deduce_unreachable_parallel(PyInterpreterState *interp,
+                            struct collection_state *state)
+{
+    int nthreads = state->parallel;
+    struct gc_par_job *job = PyMem_RawCalloc(1, sizeof(*job));
+    if (job == NULL) {
+        return 1;
+    }
+    job->state = state;
+    Py_ssize_t nchunks = 0;
+    for (struct gc_obj_chunk *c = state->objs.head; c != NULL; c = c->next) {
+        nchunks++;
+    }
+    job->chunks = PyMem_RawMalloc(Py_MAX(nchunks, 1) * sizeof(*job->chunks));
+    if (job->chunks == NULL) {
+        PyMem_RawFree(job);
+        return 1;
+    }
+    nchunks = 0;
+    for (struct gc_obj_chunk *c = state->objs.head; c != NULL; c = c->next) {
+        job->chunks[nchunks++] = c;
+    }
+    job->nchunks = nchunks;
+
+    if (!state->refs_initialized) {
+        par_pass(job, nthreads, par_init_refs);
+    }
+    par_pass(job, nthreads, par_subtract_refs);
+    GC_PHASE_DONE(state, GC_PHASE_UPDATE_REFS);
+
+#ifdef GC_DEBUG
+    gc_visit_heaps(interp, &validate_gc_objects, &state->base);
+#endif
+    gc_visit_thread_stacks(interp, state);
+
+    par_pass(job, nthreads, par_mark);
+    bool failed = false;
+    for (int i = 0; i < nthreads; i++) {
+        failed |= job->workers[i].failed;
+    }
+    GC_PHASE_DONE(state, GC_PHASE_MARK_HEAP);
+    if (failed) {
+        PyMem_RawFree(job->chunks);
+        PyMem_RawFree(job);
+        return -1;
+    }
+
+    par_pass(job, nthreads, par_scan);
+    Py_ssize_t merged = 0;
+    for (int i = 0; i < nthreads; i++) {
+        struct gc_par_worker *w = &job->workers[i];
+        par_append_worklist(&state->unreachable, w->unreachable_head,
+                            w->unreachable_tail);
+        par_append_worklist(&state->legacy_finalizers, w->legacy_head,
+                            w->legacy_tail);
+        par_append_array(&state->garbage, &w->garbage);
+        state->long_lived_total += w->long_lived_delta;
+        state->has_weakrefs |= w->has_weakrefs;
+        state->has_finalizers |= w->has_finalizers;
+        merged += w->merged;
+        for (Py_ssize_t j = 0; j < w->serial.size; j++) {
+            scan_heap_object(w->serial.items[j], state);
+        }
+        gc_par_stack_free(&w->serial);
+        // All parallel passes are done: untrack tuples that contain only
+        // untracked objects, as the serial passes do.
+        for (Py_ssize_t j = 0; j < w->tuples.size; j++) {
+            PyObject *op = w->tuples.items[j];
+            if (!_PyObject_HasDeferredRefcount(op)) {
+                _PyTuple_MaybeUntrack(op);
+            }
+        }
+        gc_par_stack_free(&w->tuples);
+    }
+#ifdef Py_REF_DEBUG
+    _Py_AddRefTotal(_PyThreadState_GET(), merged);
+#else
+    (void)merged;
+#endif
+    PyMem_RawFree(job->chunks);
+    PyMem_RawFree(job);
+    return 0;
+}
+
+
+// Parallel "mark alive": every worker runs a depth-first traversal with a
+// local stack and claims objects by atomically setting the ALIVE bit.  To
+// balance the load, a worker whose stack is large gives a chunk of it to a
+// shared queue when the queue is empty; idle workers take chunks from the
+// queue.  The pass ends when all workers are idle and the queue is empty.
+
+#define GC_MARK_CHUNK 256
+
+struct gc_mark_chunk {
+    struct gc_mark_chunk *next;
+    int n;
+    PyObject *items[GC_MARK_CHUNK];
+};
+
+struct gc_mark_shared {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    struct gc_mark_chunk *head;
+    int queued;             // chunks in the queue (read without the lock)
+    int idle;
+    int nthreads;
+    bool done;
+    bool failed;
+};
+
+struct gc_mark_local {
+    struct gc_par_stack stack;
+    struct gc_mark_shared *shared;
+};
+
+static void
+mark_shared_push(struct gc_mark_shared *sh, struct gc_mark_chunk *chunk)
+{
+    pthread_mutex_lock(&sh->mutex);
+    chunk->next = sh->head;
+    sh->head = chunk;
+    _Py_atomic_store_int_relaxed(&sh->queued, sh->queued + 1);
+    pthread_cond_signal(&sh->cond);
+    pthread_mutex_unlock(&sh->mutex);
+}
+
+// Claim `op` for this thread if it is a tracked object not yet marked alive.
+static inline bool
+gc_claim_alive(PyObject *op)
+{
+    uint8_t bits = _Py_atomic_load_uint8_relaxed(&op->ob_gc_bits);
+    if (!(bits & _PyGC_BITS_TRACKED) || (bits & _PyGC_BITS_ALIVE)) {
+        return false;
+    }
+    uint8_t old = _Py_atomic_or_uint8(&op->ob_gc_bits, _PyGC_BITS_ALIVE);
+    // (Tuples are not untracked here; see par_init_refs_object().)
+    return (old & _PyGC_BITS_ALIVE) == 0;
+}
+
+static int
+visit_mark_alive_par(PyObject *op, void *arg)
+{
+    struct gc_mark_local *local = arg;
+    if (gc_claim_alive(op)) {
+        gc_par_stack_push(&local->stack, op);
+    }
+    return 0;
+}
+
+static void
+par_mark_alive(int worker, void *arg)
+{
+    struct gc_mark_shared *sh = arg;
+    struct gc_mark_local local = {.shared = sh};
+    for (;;) {
+        while (local.stack.size > 0) {
+            PyObject *op = local.stack.items[--local.stack.size];
+            Py_TYPE(op)->tp_traverse(op, visit_mark_alive_par, &local);
+            if (local.stack.size >= 2 * GC_MARK_CHUNK &&
+                _Py_atomic_load_int_relaxed(&sh->queued) == 0)
+            {
+                struct gc_mark_chunk *chunk = malloc(sizeof(*chunk));
+                if (chunk != NULL) {
+                    local.stack.size -= GC_MARK_CHUNK;
+                    memcpy(chunk->items, &local.stack.items[local.stack.size],
+                           GC_MARK_CHUNK * sizeof(PyObject *));
+                    chunk->n = GC_MARK_CHUNK;
+                    mark_shared_push(sh, chunk);
+                }
+            }
+        }
+        if (local.stack.failed) {
+            pthread_mutex_lock(&sh->mutex);
+            sh->failed = true;
+            pthread_mutex_unlock(&sh->mutex);
+            local.stack.failed = false;
+        }
+        // Out of local work: take a chunk from the queue or finish.
+        pthread_mutex_lock(&sh->mutex);
+        sh->idle++;
+        while (sh->head == NULL && !sh->done) {
+            if (sh->idle == sh->nthreads) {
+                sh->done = true;
+                pthread_cond_broadcast(&sh->cond);
+                break;
+            }
+            pthread_cond_wait(&sh->cond, &sh->mutex);
+        }
+        if (sh->done) {
+            pthread_mutex_unlock(&sh->mutex);
+            break;
+        }
+        sh->idle--;
+        struct gc_mark_chunk *chunk = sh->head;
+        sh->head = chunk->next;
+        _Py_atomic_store_int_relaxed(&sh->queued, sh->queued - 1);
+        pthread_mutex_unlock(&sh->mutex);
+        for (int i = 0; i < chunk->n; i++) {
+            gc_par_stack_push(&local.stack, chunk->items[i]);
+        }
+        free(chunk);
+    }
+    gc_par_stack_free(&local.stack);
+}
+
+static int
+gc_mark_alive_parallel(PyInterpreterState *interp,
+                       struct collection_state *state)
+{
+#ifdef GC_DEBUG
+    gc_visit_heaps(interp, &validate_alive_bits, &state->base);
+#endif
+    struct gc_mark_shared sh = {
+        .mutex = PTHREAD_MUTEX_INITIALIZER,
+        .cond = PTHREAD_COND_INITIALIZER,
+        .nthreads = state->parallel,
+    };
+    // Claim the roots and put them in the queue.
+    struct gc_mark_local roots = {.shared = &sh};
+#define MARK_ROOT(op) \
+    do { if ((op) != NULL) visit_mark_alive_par((PyObject *)(op), &roots); } while (0)
+    MARK_ROOT(interp->sysdict);
+    MARK_ROOT(interp->builtins);
+    MARK_ROOT(interp->dict);
+    struct types_state *types = &interp->types;
+    for (int i = 0; i < _Py_MAX_MANAGED_STATIC_BUILTIN_TYPES; i++) {
+        MARK_ROOT(types->builtins.initialized[i].tp_dict);
+        MARK_ROOT(types->builtins.initialized[i].tp_subclasses);
+    }
+    for (int i = 0; i < _Py_MAX_MANAGED_STATIC_EXT_TYPES; i++) {
+        MARK_ROOT(types->for_extensions.initialized[i].tp_dict);
+        MARK_ROOT(types->for_extensions.initialized[i].tp_subclasses);
+    }
+    _Py_FOR_EACH_TSTATE_BEGIN(interp, p) {
+        for (_PyInterpreterFrame *f = p->current_frame; f != NULL; f = f->previous) {
+            if (f->owner >= FRAME_OWNED_BY_INTERPRETER || f->stackpointer == NULL) {
+                continue;
+            }
+            if (!PyStackRef_IsNullOrInt(f->f_executable)) {
+                MARK_ROOT(PyStackRef_AsPyObjectBorrow(f->f_executable));
+            }
+            for (_PyStackRef *ref = f->localsplus; ref < f->stackpointer; ref++) {
+                if (!PyStackRef_IsNullOrInt(*ref)) {
+                    MARK_ROOT(PyStackRef_AsPyObjectBorrow(*ref));
+                }
+            }
+        }
+    }
+    _Py_FOR_EACH_TSTATE_END(interp);
+#undef MARK_ROOT
+    for (Py_ssize_t i = 0; i < roots.stack.size; i += GC_MARK_CHUNK) {
+        struct gc_mark_chunk *chunk = malloc(sizeof(*chunk));
+        if (chunk == NULL) {
+            roots.stack.failed = true;
+            break;
+        }
+        chunk->n = (int)Py_MIN(GC_MARK_CHUNK, roots.stack.size - i);
+        memcpy(chunk->items, &roots.stack.items[i], chunk->n * sizeof(PyObject *));
+        chunk->next = sh.head;
+        sh.head = chunk;
+        sh.queued++;
+    }
+    bool failed = roots.stack.failed;
+    gc_par_stack_free(&roots.stack);
+
+    if (!failed) {
+        gc_par_run(state->parallel, par_mark_alive, &sh);
+        failed = sh.failed;
+    }
+    while (sh.head != NULL) {
+        struct gc_mark_chunk *chunk = sh.head;
+        sh.head = chunk->next;
+        free(chunk);
+    }
+    pthread_mutex_destroy(&sh.mutex);
+    pthread_cond_destroy(&sh.cond);
+    if (failed) {
+        // Clear all alive bits, as gc_abort_mark_alive() does.
+        gc_visit_heaps(interp, &gc_clear_alive_bits, &state->base);
+        return -1;
+    }
+    return 0;
+}
+
+#else
+void
+_PyGC_StopParallelHelpers(void)
+{
+}
+#endif  // GC_PARALLEL
+
+
 static int
 deduce_unreachable_heap(PyInterpreterState *interp,
                         struct collection_state *state)
@@ -1633,7 +2771,37 @@ deduce_unreachable_heap(PyInterpreterState *interp,
     // Identify objects that are directly reachable from outside the GC heap
     // by computing the difference between the refcount and the number of
     // incoming references.
-    gc_visit_heaps(interp, &update_refs, &state->base);
+#ifdef GC_PARALLEL
+    if (!state->parallel || gc_walk_parallel(interp, state) < 0)
+#endif
+    {
+        gc_visit_heaps(interp, &update_refs, &state->base);
+    }
+
+#ifdef GC_PARALLEL
+    if (state->parallel && state->objs.failed) {
+        // Couldn't record every object: restore the objects the walk
+        // initialized and redo the walk serially.
+        gc_visit_heaps(interp, &restore_refs, &state->base);
+        state->refs_initialized = false;
+        state->parallel = 0;
+        state->long_lived_total = 0;
+        state->candidates = 0;
+        gc_obj_array_clear(&state->objs);
+        gc_visit_heaps(interp, &update_refs, &state->base);
+    }
+    if (state->parallel) {
+        if (deduce_unreachable_parallel(interp, state) != 0) {
+            gc_obj_array_clear(&state->objs);
+            gc_obj_array_clear(&state->garbage);
+            gc_visit_heaps(interp, &restore_refs, &state->base);
+            return -1;
+        }
+        gc_obj_array_clear(&state->objs);
+        GC_PHASE_DONE(state, GC_PHASE_SCAN_HEAP);
+        goto legacy;
+    }
+#endif
     GC_PHASE_DONE(state, GC_PHASE_UPDATE_REFS);
 
 #ifdef GC_DEBUG
@@ -1690,6 +2858,9 @@ mark_done:
     gc_obj_array_clear(&state->objs);
     GC_PHASE_DONE(state, GC_PHASE_SCAN_HEAP);
 
+#ifdef GC_PARALLEL
+legacy:
+#endif
     if (state->legacy_finalizers.head) {
         // There may be objects reachable from legacy finalizers that are in
         // the unreachable set. We need to mark them as reachable.
@@ -1897,6 +3068,21 @@ _PyGC_Init(PyInterpreterState *interp)
 {
     GCState *gcstate = &interp->gc;
 
+#ifdef GC_PARALLEL
+    if (_Py_IsMainInterpreter(interp)) {
+        const char *env = getenv("PYTHON_GC_THREADS");
+        gc_par_configured = env ? Py_MIN(atoi(env), GC_PAR_MAX_THREADS) : 0;
+        env = getenv("PYTHON_GC_COOP");
+        gc_coop_configured = env ? atoi(env) : 0;
+        env = getenv("PYTHON_GC_PARALLEL_MIN");
+        if (env != NULL) {
+            gc_par_min_objects = atol(env);
+        }
+        env = getenv("PYTHON_GC_COOP_FREE");
+        gc_coop_free = env ? atoi(env) : 0;
+    }
+#endif
+
     gcstate->generation_stats = PyMem_RawCalloc(1, sizeof(struct gc_stats));
     if (gcstate->generation_stats == NULL) {
         return _PyStatus_NO_MEMORY();
@@ -1970,7 +3156,7 @@ delete_garbage_chunk(PyThreadState *tstate, struct gc_obj_chunk *chunk)
     _mi_free_batch_begin();
     for (Py_ssize_t i = 0; i < chunk->n; i++) {
         PyObject *op = chunk->items[i];
-        if (!(_Py_atomic_load_uint8_relaxed(&op->ob_gc_bits) & _PyGC_BITS_UNREACHABLE)) {
+        if (!gc_has_bit_relaxed(op, _PyGC_BITS_UNREACHABLE)) {
             // Moved to the legacy finalizers list, which owns it.
             continue;
         }
@@ -1998,7 +3184,8 @@ delete_garbage_chunk(PyThreadState *tstate, struct gc_obj_chunk *chunk)
 }
 
 // Claim and free one chunk of the current collection's garbage, if any.
-static void
+// Returns false if there was none to claim.
+static bool
 gc_assist_delete(PyThreadState *tstate)
 {
     GCState *gcstate = &tstate->interp->gc;
@@ -2012,7 +3199,7 @@ gc_assist_delete(PyThreadState *tstate)
     }
     PyMutex_Unlock(&gcstate->delete_mutex);
     if (chunk == NULL) {
-        return;
+        return false;
     }
 
     Py_ssize_t collected = delete_garbage_chunk(tstate, chunk);
@@ -2025,6 +3212,7 @@ gc_assist_delete(PyThreadState *tstate)
     }
     // The collector may free `work` as soon as the mutex is released.
     PyMutex_Unlock(&gcstate->delete_mutex);
+    return true;
 }
 
 // Free the unreachable objects with help from other threads.  Returns false
@@ -2072,6 +3260,10 @@ delete_garbage_parallel(PyThreadState *tstate, struct collection_state *state)
     PyMutex_Lock(&gcstate->delete_mutex);
     _Py_atomic_store_ptr_release(&gcstate->delete_work, &work);
     PyMutex_Unlock(&gcstate->delete_mutex);
+    if (gc_coop_free > 0) {
+        // Don't wait for the other threads to allocate: have them all help.
+        _Py_set_eval_breaker_bit_all(state->interp, _PY_GC_SCHEDULED_BIT);
+    }
 
     // Free chunks until there are none left to claim.
     for (;;) {
@@ -2207,7 +3399,11 @@ _PyGC_VisitStackRef(_PyStackRef *ref, visitproc visit, void *arg)
     // regular references.
     assert(!PyStackRef_IsTaggedInt(*ref));
     if (PyStackRef_RefcountOnObject(*ref) ||
-        (visit != visit_decref && visit != visit_decref_unreachable))
+        (visit != visit_decref && visit != visit_decref_unreachable
+#ifdef GC_PARALLEL
+         && visit != visit_decref_atomic
+#endif
+        ))
     {
         Py_VISIT(PyStackRef_AsPyObjectBorrow(*ref));
     }
@@ -2514,6 +3710,9 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
 #ifdef GC_PHASE_TRACE
     (void)PyTime_PerfCounterRaw(&state->phase_last);
 #endif
+#ifdef GC_PARALLEL
+    gc_coop_open(interp, state);
+#endif
     _PyEval_StopTheWorld(interp);
     GC_PHASE_DONE(state, GC_PHASE_STW1_WAIT);
 
@@ -2557,9 +3756,17 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     if (state->gcstate->trim_pending) {
         state->gcstate->trim_pending = 0;
         _PyMem_TrimHeaps(interp, 0);
+#ifdef GC_PARALLEL
+        gc_pool_trim();
+#endif
         trimmed = true;
     }
     GC_PHASE_DONE(state, GC_PHASE_TRIM_PENDING);
+
+#ifdef GC_PARALLEL
+    // Number of threads for the parallel passes (0: serial collection).
+    state->parallel = gc_par_threads(interp, state);
+#endif
 
     #ifdef GC_ENABLE_MARK_ALIVE
     // If gc.freeze() was used, it seems likely that doing this "mark alive"
@@ -2571,8 +3778,15 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     if (!state->gcstate->freeze_active) {
         // Mark objects reachable from known roots as "alive".  These will
         // be ignored for rest of the GC pass.
+#ifdef GC_PARALLEL
+        int err = (state->parallel
+                   ? gc_mark_alive_parallel(interp, state)
+                   : gc_mark_alive_from_roots(interp, state));
+#else
         int err = gc_mark_alive_from_roots(interp, state);
+#endif
         if (err < 0) {
+            gc_coop_close();
             _PyEval_StartTheWorld(interp);
             PyErr_NoMemory();
             return;
@@ -2584,6 +3798,7 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     // Find unreachable objects
     int err = deduce_unreachable_heap(interp, state);
     if (err < 0) {
+        gc_coop_close();
         _PyEval_StartTheWorld(interp);
         PyErr_NoMemory();
         return;
@@ -2622,6 +3837,7 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
         _PyGC_ClearAllFreeLists(interp);
         interp->gc.long_lived_total = state->long_lived_total;
     }
+    gc_coop_close();
     _PyEval_StartTheWorld(interp);
     (void)trimmed;
 
@@ -2676,6 +3892,9 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
             // An explicit gc.collect(): return the memory now.
             _PyEval_StopTheWorld(interp);
             _PyMem_TrimHeaps(interp, 1);
+#ifdef GC_PARALLEL
+            gc_pool_trim();
+#endif
             _PyEval_StartTheWorld(interp);
             GC_PHASE_DONE(state, GC_PHASE_TRIM);
             _PyMem_TrimArenas();
@@ -3229,7 +4448,10 @@ _Py_RunGC(PyThreadState *tstate)
 {
     GCState *gcstate = &tstate->interp->gc;
     if (_Py_atomic_load_ptr_relaxed(&gcstate->delete_work) != NULL) {
-        gc_assist_delete(tstate);
+        int chunks = Py_MAX(gc_coop_free, 1);
+        while (chunks-- > 0 && gc_assist_delete(tstate) &&
+               _Py_atomic_load_ptr_relaxed(&gcstate->delete_work) != NULL) {
+        }
         return;
     }
     if (!PyGC_IsEnabled()) {

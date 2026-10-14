@@ -808,6 +808,39 @@ static bool mi_heap_area_visitor(const mi_heap_t* heap, const mi_heap_area_ex_t*
   }
 }
 
+// CPython: parallel heap visiting.  _mi_heap_collect_page_list() flushes the
+// heap's delayed frees and stores up to `cap` of its pages in `pages`
+// (returning the number of pages it has); _mi_pages_visit_blocks() visits the
+// used blocks of the given pages, which may belong to different heaps.
+// Different threads may visit disjoint sets of pages concurrently, as long as
+// the owning threads are stopped.
+static bool mi_heap_collect_page(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_t* page, void* arg1, void* arg2) {
+  MI_UNUSED(heap); MI_UNUSED(pq);
+  mi_page_t** pages = (mi_page_t**)arg1;
+  size_t* state = (size_t*)arg2;   // [count, cap]
+  if (state[0] < state[1]) pages[state[0]] = page;
+  state[0]++;
+  return true;
+}
+
+size_t _mi_heap_collect_page_list(mi_heap_t* heap, mi_page_t** pages, size_t cap) {
+  _mi_heap_delayed_free_partial(heap);
+  size_t state[2] = {0, cap};
+  mi_heap_visit_pages(heap, &mi_heap_collect_page, pages, state);
+  return state[0];
+}
+
+bool _mi_pages_visit_blocks(mi_page_t** pages, size_t n, mi_block_visit_fun* visitor, void* arg) {
+  mi_visit_batch_t batch;
+  batch.visitor = visitor;
+  batch.arg = arg;
+  batch.count = 0;
+  for (size_t i = 0; i < n; i++) {
+    if (!mi_heap_visit_page_batched(mi_page_heap(pages[i]), NULL, pages[i], &batch, NULL)) return false;
+  }
+  return mi_visit_batch_flush(&batch);
+}
+
 // Visit all blocks in a heap
 bool mi_heap_visit_blocks(const mi_heap_t* heap, bool visit_blocks, mi_block_visit_fun* visitor, void* arg) {
   _mi_heap_delayed_free_partial((mi_heap_t *)heap);

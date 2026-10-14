@@ -2240,6 +2240,10 @@ tstate_wait_attach(PyThreadState *tstate)
     do {
         int state = _Py_atomic_load_int_relaxed(&tstate->state);
         if (state == _Py_THREAD_SUSPENDED) {
+#ifdef Py_GIL_DISABLED
+            // Work for the collector, if this is its pause.
+            _PyGC_CoopHelp(tstate);
+#endif
             // Wait until we're switched out of SUSPENDED to DETACHED.
             _PyParkingLot_Park(&tstate->state, &state, sizeof(tstate->state),
                                /*timeout=*/-1, NULL, /*detach=*/0);
@@ -2364,6 +2368,12 @@ _PyThreadState_Suspend(PyThreadState *tstate)
 
     // Switch to "suspended" state.
     detach_thread(tstate, _Py_THREAD_SUSPENDED);
+
+#ifdef Py_GIL_DISABLED
+    // If the collector asked for this pause, sign up as one of its workers
+    // before being counted as stopped.
+    _PyGC_CoopRegister(tstate, stw->requester);
+#endif
 
     // Decrease the count of remaining threads needing to park.
     HEAD_LOCK(runtime);
