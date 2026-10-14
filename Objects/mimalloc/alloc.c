@@ -410,6 +410,10 @@ static void mi_stat_huge_free(const mi_page_t* page) {
 // ------------------------------------------------------
 
 // multi-threaded free (or free in huge block if compiled with MI_HUGE_PAGE_ABANDON)
+static void mi_free_batch_add(mi_page_t* page, mi_block_t* block);
+static bool mi_free_batch_active(void);
+static void _mi_free_block_mt_push(mi_page_t* page, mi_block_t* block);
+
 static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* block)
 {
   // The padding check may access the non-thread-owned page for the key values.
@@ -439,6 +443,17 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
   }
   #endif
 
+  if (segment->kind != MI_SEGMENT_HUGE && mi_free_batch_active()) {
+    mi_free_batch_add(page, block);
+    return;
+  }
+  _mi_free_block_mt_push(page, block);
+}
+
+// Push a freed block on the thread-free list of a page owned by another
+// thread (or on the owning heap's delayed free list).
+static void _mi_free_block_mt_push(mi_page_t* page, mi_block_t* block)
+{
   // Try to put the block on either the page-local thread free list, or the heap delayed free list.
   mi_thread_free_t tfreex;
   bool use_delayed;
@@ -475,6 +490,85 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
       mi_assert_internal(mi_tf_delayed(tfree) == MI_DELAYED_FREEING);
       tfreex = mi_tf_set_delayed(tfree,MI_NO_DELAYED_FREE);
     } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
+  }
+}
+
+// Batched frees of blocks owned by other threads (CPython).  Freeing a
+// block owned by another thread takes an atomic compare-and-swap on the
+// page's thread-free list, and when a thread frees many such blocks, e.g.
+// garbage freed by the cyclic GC, these become a significant cost.  Between
+// _mi_free_batch_begin() and _mi_free_batch_end(), consecutive such frees in
+// the same page are linked into a local chain that is pushed with a single
+// compare-and-swap when a block of another page is freed or the batch ends.
+// The chained blocks stay counted as used by their page, so the page can't
+// be freed meanwhile; they only become reusable a little later.
+#define MI_FREE_BATCH_SLOTS 8   // chains for different pages, direct mapped
+
+typedef struct mi_free_chain_s {
+  mi_page_t*  page;
+  mi_block_t* head;
+  mi_block_t* tail;
+} mi_free_chain_t;
+
+typedef struct mi_free_batch_s {
+  size_t          depth;
+  mi_free_chain_t chains[MI_FREE_BATCH_SLOTS];
+} mi_free_batch_t;
+
+static mi_decl_thread mi_free_batch_t mi_free_batch;
+
+static bool mi_free_batch_active(void) {
+  return mi_free_batch.depth > 0;
+}
+
+static void mi_free_chain_flush(mi_free_chain_t* chain) {
+  mi_page_t* page = chain->page;
+  if (page == NULL) return;
+  mi_block_t* head = chain->head;
+  mi_block_t* tail = chain->tail;
+  chain->page = NULL;
+  mi_thread_free_t tfreex;
+  mi_thread_free_t tfree = mi_atomic_load_relaxed(&page->xthread_free);
+  do {
+    if mi_unlikely(mi_tf_delayed(tfree) == MI_USE_DELAYED_FREE) {
+      // the page is in the full queue: let the regular path notify the owner
+      for (mi_block_t* block = head; block != NULL; ) {
+        mi_block_t* next = (block == tail ? NULL : mi_block_next(page, block));
+        _mi_free_block_mt_push(page, block);
+        block = next;
+      }
+      return;
+    }
+    mi_block_set_next(page, tail, mi_tf_block(tfree));
+    tfreex = mi_tf_set_block(tfree, head);
+  } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
+}
+
+static void mi_free_batch_add(mi_page_t* page, mi_block_t* block) {
+  // page structs are entries of their segment's slice table
+  size_t slot = (size_t)((((uintptr_t)page >> 4) * 0x9E3779B97F4A7C15ULL) >> 61) % MI_FREE_BATCH_SLOTS;
+  mi_free_chain_t* chain = &mi_free_batch.chains[slot];
+  if (chain->page != page) {
+    mi_free_chain_flush(chain);
+    chain->page = page;
+    chain->tail = block;
+  }
+  else {
+    mi_block_set_next(page, block, chain->head);
+  }
+  chain->head = block;
+}
+
+void _mi_free_batch_begin(void) {
+  mi_free_batch.depth++;
+}
+
+void _mi_free_batch_end(void) {
+  mi_assert_internal(mi_free_batch.depth > 0);
+  if (--mi_free_batch.depth == 0) {
+    for (size_t i = 0; i < MI_FREE_BATCH_SLOTS; i++) {
+      mi_free_chain_flush(&mi_free_batch.chains[i]);
+    }
   }
 }
 

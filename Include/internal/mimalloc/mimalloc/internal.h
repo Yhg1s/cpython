@@ -133,6 +133,10 @@ uint8_t*   _mi_segment_page_start(const mi_segment_t* segment, const mi_page_t* 
 void       _mi_abandoned_reclaim_all(mi_heap_t* heap, mi_segments_tld_t* tld);
 void       _mi_abandoned_await_readers(mi_abandoned_pool_t *pool);
 void       _mi_abandoned_collect(mi_heap_t* heap, bool force, mi_segments_tld_t* tld);
+void       _mi_heap_collect_pages(mi_heap_t* heap);
+void       _mi_segments_tld_purge(mi_segments_tld_t* tld);
+void       _mi_free_batch_begin(void);
+void       _mi_free_batch_end(void);
 
 // "page.c"
 void*      _mi_malloc_generic(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment)  mi_attr_noexcept mi_attr_malloc;

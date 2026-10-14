@@ -405,6 +405,17 @@ void _mi_segment_thread_collect(mi_segments_tld_t* tld) {
   // nothing to do
 }
 
+// Purge (decommit) the free spans of all segments with free spans in `tld`
+// now, instead of when the purge delay expires and the owning thread next
+// frees or allocates in the segment.  The owning thread must not be running.
+void _mi_segments_tld_purge(mi_segments_tld_t* tld) {
+  for (size_t bin = 0; bin <= MI_SEGMENT_BIN_MAX; bin++) {
+    for (mi_slice_t* slice = tld->spans[bin].first; slice != NULL; slice = slice->next) {
+      mi_segment_try_purge(_mi_ptr_segment(slice), true, tld->stats);
+    }
+  }
+}
+
 
 /* -----------------------------------------------------------
    Commit/Decommit ranges
