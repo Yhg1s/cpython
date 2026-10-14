@@ -1,0 +1,1 @@
+{"bench": "docs build", "gc_mode": "gil", "processes": 1, "wall_s": 45.52, "gc_share": 0.2588, "collections": 7195, "young": 7178, "full": 17, "pause_p99_ms": 1.3, "pause_max_ms": 3157.01, "full_max_ms": 3157.01, "maxrss_mb": 917}

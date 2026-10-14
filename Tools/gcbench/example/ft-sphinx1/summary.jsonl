@@ -1,0 +1,1 @@
+{"bench": "docs build", "gc_mode": "ft", "processes": 1, "wall_s": 44.05, "gc_share": 0.1359, "collections": 54, "young": 0, "full": 54, "pause_p99_ms": 547.87, "pause_max_ms": 1038.74, "full_max_ms": 1038.74, "maxrss_mb": 1093}
