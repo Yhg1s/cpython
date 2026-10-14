@@ -141,3 +141,18 @@ module re-enables the GIL.
   much more (one outlier sets it), and multi-threaded runs more than
   single-threaded ones. In the default build, multi-threaded workloads are
   dominated by GIL contention, and stalls include GIL waits.
+
+## Measuring the byte trigger
+
+The collector also runs once the memory that GC objects hold on the side
+(the PyMem heap and the heap of objects without GC support) has grown
+enough; only with generational collection (`PYTHON_GC_GENERATIONAL=1`).
+Compare a build with one of the commit before it:
+
+    python suite.py --python BUILD/python --env PYTHON_GC_GENERATIONAL=1 \
+        --only "bigbuffers 200KB" --only "bigbuffers 4MB" \
+        --only ext_buffers_pymem --only ext_buffers_malloc --only json_churn
+
+`bigbuffers` and `ext_buffers_pymem` should hold far less memory;
+`ext_buffers_malloc` (memory the allocator can't see) and `json_churn` (acyclic
+churn that must not trigger collections) should not change.

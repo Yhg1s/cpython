@@ -1015,6 +1015,9 @@ static mi_slice_t* mi_segment_page_clear(mi_page_t* page, mi_segments_tld_t* tld
     _mi_os_reset(start, psize, tld->stats);
   }
 
+  // CPython: nothing on this page is in use any more
+  _mi_page_account(page, 0);
+
   // zero the page data, but not the segment fields
   page->is_zero_init = false;
   ptrdiff_t ofs = offsetof(mi_page_t, capacity);

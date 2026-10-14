@@ -156,6 +156,8 @@ size_t     _mi_page_queue_append(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_q
 void       _mi_deferred_free(mi_heap_t* heap, bool force);
 
 void       _mi_page_free_collect(mi_page_t* page,bool force);
+void       _mi_page_account(mi_page_t* page, uint32_t used);                    // CPython: report the change in the page's bytes in use
+void       _mi_page_account_flush(void);                                        // CPython: pass on what the current thread has gathered
 void       _mi_page_reclaim(mi_heap_t* heap, mi_page_t* page);   // callback from segments
 
 size_t     _mi_bin_size(uint8_t bin);           // for stats

@@ -333,6 +333,13 @@ extern PyObject *_PyGC_GetReferrers(PyInterpreterState *interp, PyObject *objs);
 extern void _PyGC_ClearAllFreeLists(PyInterpreterState *interp);
 extern void _Py_RunGC(PyThreadState *tstate);
 
+#ifdef Py_GIL_DISABLED
+// The memory in use in the heaps that hold what GC objects own on the side
+// changed (Objects/obmalloc.c); a trigger for collections next to the
+// object count.  Returns false if there is no thread state to record it with.
+extern bool _PyGC_HeapBytesChanged(Py_ssize_t delta);
+#endif
+
 union _PyStackRef;
 
 // GC visit callback for tracked interpreter frames

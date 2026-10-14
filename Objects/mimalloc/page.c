@@ -222,6 +222,37 @@ static void _mi_page_thread_free_collect(mi_page_t* page)
   }
 }
 
+// CPython: an estimate of the bytes in use, kept without touching the
+// allocation and free fast paths.  A page records how many of its blocks
+// were in use when it was last looked at here (`accounted`); the difference
+// with `used` times the block size is what changed since.  Called where the
+// slow paths look at a page anyway: when its free lists are collected, after
+// a slow-path allocation from it, and when it is cleared.  Only the heaps
+// for PyMem_Malloc() and for objects without GC support are counted (what GC
+// objects hold on the side; GC objects themselves are counted as objects).
+// Changes are gathered per thread and passed on in steps.
+#define MI_PY_ACCOUNT_STEP (256 * 1024)
+static mi_decl_thread intptr_t mi_py_bytes_pending;
+
+void _mi_page_account(mi_page_t* page, uint32_t used) {
+  if (page->tag > 1 || used == page->accounted) return;
+  intptr_t delta = ((intptr_t)used - (intptr_t)page->accounted) * (intptr_t)mi_page_block_size(page);
+  page->accounted = used;
+  mi_py_bytes_pending += delta;
+  if (mi_py_bytes_pending >= MI_PY_ACCOUNT_STEP || mi_py_bytes_pending <= -MI_PY_ACCOUNT_STEP) {
+    if (_PyMem_mi_bytes_changed(mi_py_bytes_pending)) {
+      mi_py_bytes_pending = 0;
+    }
+  }
+}
+
+// Pass on what this thread has gathered (it is about to exit).
+void _mi_page_account_flush(void) {
+  if (mi_py_bytes_pending != 0 && _PyMem_mi_bytes_changed(mi_py_bytes_pending)) {
+    mi_py_bytes_pending = 0;
+  }
+}
+
 void _mi_page_free_collect(mi_page_t* page, bool force) {
   mi_assert_internal(page!=NULL);
 
@@ -253,6 +284,7 @@ void _mi_page_free_collect(mi_page_t* page, bool force) {
   }
 
   mi_assert_internal(!force || page->local_free == NULL);
+  _mi_page_account(page, page->used);
 }
 
 
@@ -969,9 +1001,13 @@ void* _mi_malloc_generic(mi_heap_t* heap, size_t size, bool zero, size_t huge_al
     void* p = _mi_page_malloc(heap, page, size, false);
     mi_assert_internal(p != NULL);
     _mi_memzero_aligned(p, mi_page_usable_block_size(page));
+    _mi_page_account(page, page->used);
     return p;
   }
   else {
-    return _mi_page_malloc(heap, page, size, zero);
+    void* p = _mi_page_malloc(heap, page, size, zero);
+    // (large blocks have a page each and only ever come through here)
+    _mi_page_account(page, page->used);
+    return p;
   }
 }

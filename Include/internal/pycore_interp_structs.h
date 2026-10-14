@@ -273,6 +273,15 @@ struct _gc_runtime_state {
 
     /* True if gc.freeze() has been used. */
     int freeze_active;
+
+    /* Memory in the heaps that hold what GC objects own on the side (the
+       PyMem heap and the heap of objects without GC support), as estimated
+       by the allocator (_PyGC_HeapBytesChanged()): what is in use now, the
+       net growth since the last collection started, and what was in use
+       after the last full collection. */
+    Py_ssize_t side_bytes;
+    Py_ssize_t side_bytes_new;
+    Py_ssize_t side_bytes_at_full;
     /* Garbage from the current collection that other threads can help
        free, or NULL.  Protected by delete_mutex. */
     struct gc_delete_work *delete_work;

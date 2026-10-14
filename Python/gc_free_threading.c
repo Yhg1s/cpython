@@ -2255,6 +2255,21 @@ get_gc_state(void)
 }
 
 
+// The byte trigger.  Collections are triggered by the number of new GC
+// objects, which says nothing about the memory they hold: a few objects
+// with large buffers (or lists, dict tables, strings) can keep gigabytes
+// alive as garbage.  So a collection also runs once the memory on the side
+// (see _PyGC_HeapBytesChanged()) grew by GC_SIDE_BYTES_PERCENT of what was
+// in use before, and by at least GC_SIDE_BYTES_MIN.  The floor matters: a
+// batch of garbage that fits in the CPU cache is freed and reused while it
+// is still there.
+//
+// Only with generational collection: the trigger makes collections more
+// frequent, which pays when they are young collections and costs more than
+// it saves when every one of them scans the whole heap.
+#define GC_SIDE_BYTES_PERCENT 25
+#define GC_SIDE_BYTES_MIN ((Py_ssize_t)16 << 20)
+
 void
 _PyGC_InitState(GCState *gcstate)
 {
@@ -2771,12 +2786,31 @@ gc_old_growth(GCState *gcstate)
     return Py_MAX(pending, 0);
 }
 
+// The memory on the side grew enough since the last collection to run one.
+static bool
+gc_side_bytes_exceeded(GCState *gcstate)
+{
+    if (!gc_generational_enabled() || gcstate->freeze_active) {
+        return false;
+    }
+    Py_ssize_t grown = _Py_atomic_load_ssize_relaxed(&gcstate->side_bytes_new);
+    if (grown < GC_SIDE_BYTES_MIN) {
+        return false;
+    }
+    Py_ssize_t now = _Py_atomic_load_ssize_relaxed(&gcstate->side_bytes);
+    Py_ssize_t before = Py_MAX(now - grown, 0);
+    return grown > before / 100 * GC_SIDE_BYTES_PERCENT;
+}
+
 static bool
 gc_should_collect(GCState *gcstate)
 {
     int count = _Py_atomic_load_int_relaxed(&gcstate->young.count);
     int threshold = gcstate->young.threshold;
     int gc_enabled = _Py_atomic_load_int_relaxed(&gcstate->enabled);
+    if (threshold != 0 && gc_enabled && gc_side_bytes_exceeded(gcstate)) {
+        return true;
+    }
     if (count <= threshold || threshold == 0 || !gc_enabled) {
         return false;
     }
@@ -2881,6 +2915,22 @@ record_old_deallocation(PyThreadState *tstate)
     }
 }
 
+// The memory on the side that survived the collections since the last full
+// one (held by objects that are old now, garbage or not) grew enough to look
+// at the old generation.  Without this, what the objects in flight at each
+// young collection hold piles up there: they survive it, become old, and
+// their number alone doesn't bring on a full collection for a long time.
+static bool
+gc_side_bytes_old_growth_exceeded(GCState *gcstate)
+{
+    Py_ssize_t now = _Py_atomic_load_ssize_relaxed(&gcstate->side_bytes);
+    Py_ssize_t grown = _Py_atomic_load_ssize_relaxed(&gcstate->side_bytes_new);
+    Py_ssize_t base = Py_MAX(gcstate->side_bytes_at_full, 0);
+    Py_ssize_t survived = now - grown - base;
+    return (survived >= GC_SIDE_BYTES_MIN &&
+            survived > base / 100 * GC_SIDE_BYTES_PERCENT);
+}
+
 // With generational collection, collections of generation 0 (automatic ones
 // and gc.collect(0)) are young collections, unless the old generation grew
 // enough since the last full collection.
@@ -2891,7 +2941,8 @@ gc_is_young_collection(GCState *gcstate, int generation, _PyGC_Reason reason)
             reason != _Py_GC_REASON_SHUTDOWN &&
             !gcstate->freeze_active &&
             (reason == _Py_GC_REASON_MANUAL ||
-             gc_old_growth(gcstate) < gcstate->long_lived_total / GC_HEAP_DIVISOR));
+             (gc_old_growth(gcstate) < gcstate->long_lived_total / GC_HEAP_DIVISOR &&
+              !gc_side_bytes_old_growth_exceeded(gcstate))));
 }
 
 // After freeing a lot of garbage, return the empty heap pages of all threads
@@ -2937,6 +2988,7 @@ gc_collect_internal(PyInterpreterState *interp, struct collection_state *state, 
     }
 
     state->gcstate->young.count = 0;
+    _Py_atomic_store_ssize_relaxed(&state->gcstate->side_bytes_new, 0);
     for (int i = 1; i <= generation; ++i) {
         state->gcstate->old[i-1].count = 0;
     }
@@ -3219,6 +3271,11 @@ gc_collect_main(PyThreadState *tstate, int generation, _PyGC_Reason reason)
     };
 
     gc_collect_internal(interp, &state, generation);
+    if (!young) {
+        gcstate->side_bytes_at_full =
+            _Py_atomic_load_ssize_relaxed(&gcstate->side_bytes) -
+            _Py_atomic_load_ssize_relaxed(&gcstate->side_bytes_new);
+    }
     // (Only left over when the collection failed before moving pages.)
     PyMem_RawFree(state.promote.pages);
     PyMem_RawFree(state.demote.pages);
@@ -3858,6 +3915,35 @@ _PyGC_VisitObjectsWorldStopped(PyInterpreterState *interp,
         .arg = arg,
     };
     gc_visit_heaps(interp, &custom_visitor_wrapper, &wrapper.base);
+}
+
+// Called by the allocator (Objects/obmalloc.c) when its estimate of the
+// memory in use on the side has changed by `delta` bytes.  The estimate is
+// net, like the object count: memory that reference counting frees again
+// doesn't add up.  Returns false if there is no thread state to record the
+// change with (the allocator then keeps it for later).
+bool
+_PyGC_HeapBytesChanged(Py_ssize_t delta)
+{
+    PyThreadState *tstate = _PyThreadState_GET();
+    if (tstate == NULL) {
+        return false;
+    }
+    GCState *gcstate = &tstate->interp->gc;
+    _Py_atomic_add_ssize(&gcstate->side_bytes, delta);
+    Py_ssize_t grown = _Py_atomic_add_ssize(&gcstate->side_bytes_new, delta) + delta;
+    if (grown < 0) {
+        // Memory from before the last collection was freed: that isn't
+        // credit for garbage made since.
+        _Py_atomic_store_ssize_relaxed(&gcstate->side_bytes_new, 0);
+    }
+    if (delta > 0 && gc_side_bytes_exceeded(gcstate) &&
+        gc_should_collect(gcstate) &&
+        !_Py_atomic_load_int_relaxed(&gcstate->collecting))
+    {
+        _Py_ScheduleGC(tstate);
+    }
+    return true;
 }
 
 void

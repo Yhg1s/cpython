@@ -21,6 +21,7 @@ static void _PyMem_mi_page_clear_qsbr(mi_page_t *page);
 static bool _PyMem_mi_page_is_safe_to_free(mi_page_t *page);
 static bool _PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq, bool force);
 static void _PyMem_mi_page_reclaimed(mi_page_t *page);
+static bool _PyMem_mi_bytes_changed(intptr_t delta);
 static void _PyMem_mi_heap_collect_qsbr(mi_heap_t *heap);
 #  include "pycore_mimalloc.h"
 #  include "mimalloc/static.c"
@@ -243,6 +244,19 @@ _PyMem_TrimArenas(void)
     _mi_arena_collect(true, &tstate->mimalloc.tld.stats);
 }
 #endif
+
+// The bytes in use in the PyMem and non-GC object heaps changed by `delta`
+// (an estimate from mimalloc's page bookkeeping, see _mi_page_account()).
+// Returns false if it could not be recorded now.
+static bool
+_PyMem_mi_bytes_changed(intptr_t delta)
+{
+#ifdef Py_GIL_DISABLED
+    return _PyGC_HeapBytesChanged((Py_ssize_t)delta);
+#else
+    return true;
+#endif
+}
 
 static bool
 _PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq, bool force)

@@ -3343,6 +3343,9 @@ _PyThreadState_ClearMimallocHeaps(PyThreadState *tstate)
         // remain visible to the GC.
         _mi_heap_collect_abandon(&tstate_impl->mimalloc.heaps[i]);
     }
+    // What the allocator has gathered for the GC's byte trigger on this
+    // thread but not passed on yet.
+    _mi_page_account_flush();
 #endif
 }
 

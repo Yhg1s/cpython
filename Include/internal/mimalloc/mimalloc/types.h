@@ -352,6 +352,7 @@ typedef struct mi_page_s {
   mi_block_t*           free;              // list of available free blocks (`malloc` allocates from this list)
   uint32_t              used;              // number of blocks in use (including blocks in `local_free` and `thread_free`)
   uint32_t              xblock_size;       // size available in each block (always `>0`)
+  uint32_t              accounted;         // CPython: `used` when the page's bytes were last reported (see `_mi_page_account`)
   mi_block_t*           local_free;        // list of deferred free blocks by this thread (migrates to `free`)
 
   #if (MI_ENCODE_FREELIST || MI_PADDING)
